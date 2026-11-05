@@ -64,6 +64,7 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
 #activity .txt{font-weight:600}
 #activity .el{color:var(--ink-2);font-variant-numeric:tabular-nums;font-size:12.5px}
 #activity .extra{color:var(--warn);font-size:12px}
+#activity .prog{color:var(--accent);font-size:12px}
 .spinner{width:16px;height:16px;flex:none;border:2.5px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .member.pending .fig{filter:drop-shadow(0 0 8px var(--accent))}
@@ -209,7 +210,7 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
         <div class="rug"></div>
         <svg id="lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
         <div class="you"><div class="seat">You</div>Facilitator</div>
-        <div id="activity" class="hidden" role="status" aria-live="polite"><div class="spinner"></div><div><div class="txt"></div><div class="el"></div><div class="extra"></div></div></div>
+        <div id="activity" class="hidden" role="status" aria-live="polite"><div class="spinner"></div><div><div class="txt"></div><div class="el"></div><div class="prog"></div><div class="extra"></div></div></div>
         <div id="riskBanner" class="hidden"></div>
         <div id="pausedOverlay" class="hidden"><div><h3 style="margin:0 0 6px">Session paused</h3><p class="hint" style="margin:0 0 12px">Take the time you need. Nothing happens in the group while paused.</p><button class="btn" id="resumeBtn">Resume</button></div></div>
       </div>
@@ -568,32 +569,83 @@ function setStatus(state, text) {
   dot.classList.toggle("ok", state === "ok"); dot.classList.toggle("bad", state === "bad");
   document.getElementById("statusText").textContent = text;
 }
-async function callLLM(endpoint, model, messages, { temperature = 0.7, max_tokens = 400 } = {}) {
+/* Streams the reply (stream:true) so the page can show progress and use
+   idle timeouts instead of one fixed limit: up to FIRST_TOKEN_MS for the
+   model to start (a cold model may still be loading, and a long prompt has
+   to be read first), then IDLE_MS between chunks. Falls back to a normal
+   JSON body if the server ignores stream. */
+const FIRST_TOKEN_MS = 120000, IDLE_MS = 30000;
+async function callLLMOnce(endpoint, model, messages, { temperature, max_tokens, onProgress }) {
+  const controller = new AbortController();
+  let timer, gotFirst = false;
+  const arm = ms => { clearTimeout(timer); timer = setTimeout(() => controller.abort(), ms); };
+  const t0 = performance.now();
+  arm(FIRST_TOKEN_MS);
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages, temperature, max_tokens, stream: true }), signal: controller.signal,
+    });
+    if (!res.ok) {
+      let detail = ""; try { detail = (await res.text()).replace(/\s+/g, " ").slice(0, 160); } catch (e) {}
+      throw new Error("Server responded " + res.status + (detail ? ": " + detail : ""));
+    }
+    const ct = res.headers.get("content-type") || "";
+    let content = "", firstMs = null;
+    if (!res.body || !/event-stream/i.test(ct)) {
+      const data = await res.json();
+      content = data?.choices?.[0]?.message?.content;
+      if (typeof content !== "string") throw new Error("Unexpected response shape");
+      firstMs = performance.now() - t0;
+    } else {
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      let buf = "", done = false;
+      while (!done) {
+        const r = await reader.read();
+        if (r.done) break;
+        buf += dec.decode(r.value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
+          if (payload === "[DONE]") { done = true; break; }
+          let j; try { j = JSON.parse(payload); } catch (e) { continue; }
+          if (j.error) throw new Error("Server error: " + (j.error.message || JSON.stringify(j.error)).slice(0, 160));
+          const piece = j?.choices?.[0]?.delta?.content ?? j?.choices?.[0]?.message?.content ?? "";
+          if (piece) {
+            if (!gotFirst) { gotFirst = true; firstMs = performance.now() - t0; }
+            content += piece;
+            onProgress && onProgress({ chars: content.length, firstMs });
+          }
+        }
+        arm(gotFirst ? IDLE_MS : FIRST_TOKEN_MS);
+      }
+    }
+    return { content, firstMs, totalMs: performance.now() - t0 };
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error(gotFirst
+      ? `the model stopped sending part-way through its reply (nothing for ${IDLE_MS / 1000}s)`
+      : `the model didn't start replying within ${FIRST_TOKEN_MS / 1000}s (it may still be loading, or the server is busy)`);
+    throw err;
+  } finally { clearTimeout(timer); }
+}
+async function callLLM(endpoint, model, messages, { temperature = 0.7, max_tokens = 400, onProgress, withTiming = false } = {}) {
   const delays = [1000, 3000, 6000];
   for (let attempt = 0; ; attempt++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 75000);
     try {
-      const res = await fetch(endpoint, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages, temperature, max_tokens }), signal: controller.signal,
-      });
-      if (!res.ok) {
-        let detail = ""; try { detail = (await res.text()).replace(/\s+/g, " ").slice(0, 160); } catch (e) {}
-        throw new Error("Server responded " + res.status + (detail ? ": " + detail : ""));
-      }
-      const data = await res.json();
-      const content = data?.choices?.[0]?.message?.content;
-      if (typeof content !== "string") throw new Error("Unexpected response shape");
+      const r = await callLLMOnce(endpoint, model, messages, { temperature, max_tokens, onProgress });
       setStatus("ok", "Connected"); noteActivity("");
-      return content;
+      return withTiming ? r : r.content;
     } catch (err) {
       const retriable = err instanceof TypeError || /Server responded (400|5\d\d)/.test(err.message);
       if (retriable && attempt < delays.length) { setStatus("", "Reconnecting…"); noteActivity(`Server problem (${err.message.slice(0, 80)}). Retrying ${attempt + 1}/${delays.length}…`); await new Promise(r => setTimeout(r, delays[attempt])); continue; }
-      if (err.name === "AbortError") throw new Error("the model took too long to reply");
       throw err;
-    } finally { clearTimeout(timer); }
+    }
   }
+}
+function progressReporter() {
+  return ({ chars, firstMs }) => setProgress(`Model started after ${(firstMs / 1000).toFixed(1)}s · receiving reply (${chars} characters)`);
 }
 /* Small models wrap JSON in prose, code fences or <think> blocks, and
    sometimes leave trailing commas. Pull out the first balanced object. */
@@ -669,7 +721,7 @@ ${recentTranscript()}
 
 Facilitator's latest move${addressed ? " (addressed to " + addressed + ")" : ""}: ${facText}`;
   const obj = await callJSON(directorEndpoint(), config.directorModel,
-    [{ role:"system", content:directorSystemPrompt() }, { role:"user", content:user }], { temperature:0.4, max_tokens:500 });
+    [{ role:"system", content:directorSystemPrompt() }, { role:"user", content:user }], { temperature:0.4, max_tokens:450, onProgress:progressReporter() });
   return normaliseDecision(obj);
 }
 function normaliseDecision(obj) {
@@ -712,7 +764,7 @@ ${recentTranscript()}
 Director's private note for your next turn (do not repeat it): ${instruction || "respond naturally"}
 Now give your turn as JSON.`;
   const obj = await callJSON(config.memberEndpoint, config.memberModel,
-    [{ role:"system", content:memberSystemPrompt(m) }, { role:"user", content:user }], { temperature:0.85, max_tokens:300 });
+    [{ role:"system", content:memberSystemPrompt(m) }, { role:"user", content:user }], { temperature:0.85, max_tokens:300, onProgress:progressReporter() });
   return normaliseMember(obj, m.id);
 }
 function normaliseMember(obj, id) {
@@ -1022,6 +1074,7 @@ function setActivity(text) {
   actStart = performance.now();
   a.querySelector(".txt").textContent = text;
   a.querySelector(".extra").textContent = "";
+  a.querySelector(".prog").textContent = S.mode === "llm" ? "Sent to the model, waiting for it to start…" : "";
   const tick = () => {
     const s = Math.round((performance.now() - actStart) / 1000);
     a.querySelector(".el").textContent = s < 15 ? `${s}s` : `${s}s · local models can take a while, it's still working`;
@@ -1029,6 +1082,7 @@ function setActivity(text) {
   tick(); actTimer = setInterval(tick, 500);
   a.classList.remove("hidden");
 }
+function setProgress(t) { const x = document.querySelector("#activity .prog"); if (x) x.textContent = t; }
 function noteActivity(t) { const x = document.querySelector("#activity .extra"); if (x) x.textContent = t; }
 function applyTrust(id, delta, why, record) {
   if (!delta) return;
@@ -1053,7 +1107,7 @@ async function llmObserver() {
   const lines = S.transcript.filter(e => e.who !== "system" && e.who !== "warn").map(e =>
     e.who === "facilitator" ? `[turn ${e.turn}] Facilitator: ${e.text}  {skills: ${(e.skills || []).join(", ")}}` : `[turn ${e.turn}] ${BYID[e.who].name} (trust now ${e.trust}): ${e.text}  {private thought: ${e.thought || "-"}}`).join("\n");
   const hidden = MEMBERS.map(m => `- ${m.id} (${m.name}, ${m.role}): hidden story: ${m.hidden}. Trust ${S.members[m.id].startTrust} → ${S.members[m.id].trust}.`).join("\n");
-  const obj = await callJSON(directorEndpoint(), config.directorModel, [{ role:"system", content:sys }, { role:"user", content:`Members:\n${hidden}\n\nTranscript:\n${lines}` }], { temperature:0.3, max_tokens:900 });
+  const obj = await callJSON(directorEndpoint(), config.directorModel, [{ role:"system", content:sys }, { role:"user", content:`Members:\n${hidden}\n\nTranscript:\n${lines}` }], { temperature:0.3, max_tokens:900, onProgress:progressReporter() });
   return obj;
 }
 function demoObserver() {
@@ -1179,10 +1233,20 @@ document.getElementById("testBtn").onclick = async () => {
   const out = document.getElementById("testResult");
   const ep = document.getElementById("memberEndpoint").value.trim(), mm = document.getElementById("memberModel").value.trim();
   const de = document.getElementById("directorEndpoint").value.trim() || ep, dm = document.getElementById("directorModel").value.trim();
-  out.textContent = "Testing…";
-  const one = async (label, e, m) => { try { const r = await callLLM(e, m, [{ role:"user", content:"Reply with the word OK." }], { max_tokens:10, temperature:0 }); return `${label}: OK (“${r.trim().slice(0, 20)}”)`; } catch (err) { return `${label}: failed (${err.message})`; } };
-  const [a, b] = await Promise.all([one("Members", ep, mm), one("Director", de, dm)]);
-  out.textContent = a + " · " + b;
+  out.innerHTML = "Sending a real director request and a real member request (the same size as in a session)… this can take a minute.";
+  const one = async (label, e, m, messages, max_tokens) => {
+    try {
+      const r = await callLLM(e, m, messages, { max_tokens, temperature:0.4, withTiming:true });
+      const ok = !!extractJSON(r.content);
+      const first = r.firstMs / 1000, total = r.totalMs / 1000;
+      const verdict = total > 45 ? " Too slow for live turns." : total > 20 ? " Usable but slow." : " Good.";
+      return `<b>${label}</b> (${esc(m)}): started replying after <b>${first.toFixed(1)}s</b>, finished after <b>${total.toFixed(1)}s</b>, ${ok ? "valid JSON" : "<b>reply was not valid JSON</b>"}.${verdict}`;
+    } catch (err) { return `<b>${label}</b> (${esc(m)}): failed: ${esc(err.message)}`; }
+  };
+  const dirMsgs = [{ role:"system", content:directorSystemPrompt() }, { role:"user", content:`Turn 1. Current stage: forming.\nMember state:\n${memberSummary()}\n\nRecent conversation:\n(nothing said yet)\n\nFacilitator's latest move: Welcome back, everyone. How has this week been for you?` }];
+  const memMsgs = [{ role:"system", content:memberSystemPrompt(MEMBERS[0]) }, { role:"user", content:"Your current trust in the group: 5/10. Your mood: calm.\nRecent conversation:\nFacilitator: Welcome back, everyone. How has this week been for you?\n\nDirector's private note for your next turn (do not repeat it): respond naturally\nNow give your turn as JSON." }];
+  const [a, b] = await Promise.all([one("Members", ep, mm, memMsgs, 300), one("Director", de, dm, dirMsgs, 450)]);
+  out.innerHTML = a + "<br>" + b;
 };
 document.querySelectorAll(".modal").forEach(mo => mo.addEventListener("click", e => { if (e.target === mo && mo.id === "settingsModal") mo.classList.add("hidden"); }));
 
