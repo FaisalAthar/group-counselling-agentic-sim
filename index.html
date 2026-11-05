@@ -60,7 +60,16 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
 .stage-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:2px 4px 8px}
 .stage-badge{font-size:12px;padding:3px 9px;border-radius:999px;background:var(--chip)}
 .stage-badge b{font-weight:650}
-#directorBusy{color:var(--accent)}
+#activity{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);z-index:7;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:9px 14px;box-shadow:var(--shadow);font-size:13.5px;display:flex;gap:10px;align-items:center;max-width:78%}
+#activity .txt{font-weight:600}
+#activity .el{color:var(--ink-2);font-variant-numeric:tabular-nums;font-size:12.5px}
+#activity .extra{color:var(--warn);font-size:12px}
+.spinner{width:16px;height:16px;flex:none;border:2.5px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.member.pending .fig{filter:drop-shadow(0 0 8px var(--accent))}
+.member.pending .name::after{content:" · up next";color:var(--accent);font-weight:600}
+.line.pending{color:var(--ink-2);font-style:italic;font-size:13px}
+.line.warn{background:color-mix(in srgb,var(--warn) 14%,transparent);border-radius:8px;padding:6px 9px;font-size:12.5px}
 #stage{position:relative;width:100%;aspect-ratio:4/3;border-radius:12px;overflow:hidden;
   background:radial-gradient(ellipse 62% 55% at 50% 52%,var(--stage-floor) 0 60%,var(--stage) 61%);}
 #stage .rug{position:absolute;left:50%;top:52%;width:44%;height:36%;transform:translate(-50%,-50%);border-radius:50%;border:2px dashed var(--line);opacity:.8}
@@ -93,7 +102,7 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
 .think{background:var(--thought);color:var(--thought-ink);font-style:italic;bottom:100%;margin-bottom:2px;border:1px dashed color-mix(in srgb,var(--thought-ink) 40%,transparent)}
 .think::before{content:"💭 ";font-style:normal}
 .member.top .say,.member.top .think{bottom:auto;top:100%;margin-top:4px;margin-bottom:0}
-.typing{position:absolute;left:50%;top:-6px;transform:translateX(-50%);background:var(--bubble);padding:2px 9px;border-radius:10px;font-size:14px;letter-spacing:2px;box-shadow:var(--shadow)}
+.typing{position:absolute;left:50%;top:-14px;transform:translateX(-50%);background:var(--accent);color:var(--accent-ink);padding:3px 11px;border-radius:12px;font-size:18px;line-height:1;letter-spacing:3px;box-shadow:var(--shadow);z-index:7}
 .typing span{animation:blink 1s infinite}.typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
 @keyframes blink{50%{opacity:.2}}
 .you{position:absolute;left:50%;top:92%;transform:translate(-50%,-50%);text-align:center;font-size:12px;color:var(--ink-2)}
@@ -195,12 +204,12 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
         <span class="stage-badge">Group stage: <b id="stageName">forming</b></span>
         <span class="stage-badge">Turn <b id="turnNo">0</b></span>
         <span class="stage-badge" id="modeBadge">Mode: -</span>
-        <span class="stage-badge hidden" id="directorBusy">Director deciding…</span>
       </div>
       <div id="stage">
         <div class="rug"></div>
         <svg id="lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
         <div class="you"><div class="seat">You</div>Facilitator</div>
+        <div id="activity" class="hidden" role="status" aria-live="polite"><div class="spinner"></div><div><div class="txt"></div><div class="el"></div><div class="extra"></div></div></div>
         <div id="riskBanner" class="hidden"></div>
         <div id="pausedOverlay" class="hidden"><div><h3 style="margin:0 0 6px">Session paused</h3><p class="hint" style="margin:0 0 12px">Take the time you need. Nothing happens in the group while paused.</p><button class="btn" id="resumeBtn">Resume</button></div></div>
       </div>
@@ -506,6 +515,7 @@ function addLine(entry) {
   const d = document.createElement("div");
   d.id = "line-" + (S.transcript.length - 1);
   if (entry.who === "system") { d.className = "line sys"; d.textContent = entry.text; }
+  else if (entry.who === "warn") { d.className = "line warn"; d.textContent = entry.text; }
   else if (entry.who === "facilitator") {
     d.className = "line fac";
     d.innerHTML = `<div class="who">You (facilitator)${entry.to ? " → " + esc(BYID[entry.to].name) : ""}</div><div class="txt">${esc(entry.text)}</div>`;
@@ -526,7 +536,7 @@ function addDecision(dec) {
   const speakers = (dec.speakers || []).map(s => `<b>${esc(BYID[s.id]?.name || s.id)}</b>: <span class="k">${esc(s.instruction || "")}</span>`).join("<br>");
   const trust = (dec.trustChanges || []).map(c => `<span class="chip">${esc(BYID[c.id].name)} <span class="dd ${c.delta > 0 ? "up" : "down"}">${c.delta > 0 ? "+" : ""}${c.delta}</span>${c.why ? ` <span class="k">${esc(c.why)}</span>` : ""}</span>`).join("");
   d.innerHTML = `
-    <h4>Turn ${dec.turn} <span class="chip">stage: ${esc(dec.stage)}</span>${dec.source === "fallback" ? ' <span class="chip neg">scripted fallback</span>' : ""}</h4>
+    <h4>Turn ${dec.turn} <span class="chip">stage: ${esc(dec.stage)}</span>${dec.directorSecs ? ` <span class="k">decided in ${dec.directorSecs}s</span>` : ""}${dec.source === "fallback" ? ' <span class="chip neg">scripted fallback</span>' : ""}</h4>
     ${skills ? `<div class="k">Your move:</div><div>${skills}</div>` : ""}
     ${dec.skillNote ? `<p>${esc(dec.skillNote)}</p>` : ""}
     ${dec.event ? `<p><span class="k">Event introduced:</span> ${esc(dec.event)}</p>` : ""}
@@ -562,21 +572,24 @@ async function callLLM(endpoint, model, messages, { temperature = 0.7, max_token
   const delays = [1000, 3000, 6000];
   for (let attempt = 0; ; attempt++) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 90000);
+    const timer = setTimeout(() => controller.abort(), 75000);
     try {
       const res = await fetch(endpoint, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model, messages, temperature, max_tokens }), signal: controller.signal,
       });
-      if (!res.ok) throw new Error("Server responded " + res.status);
+      if (!res.ok) {
+        let detail = ""; try { detail = (await res.text()).replace(/\s+/g, " ").slice(0, 160); } catch (e) {}
+        throw new Error("Server responded " + res.status + (detail ? ": " + detail : ""));
+      }
       const data = await res.json();
       const content = data?.choices?.[0]?.message?.content;
       if (typeof content !== "string") throw new Error("Unexpected response shape");
-      setStatus("ok", "Connected");
+      setStatus("ok", "Connected"); noteActivity("");
       return content;
     } catch (err) {
       const retriable = err instanceof TypeError || /Server responded (400|5\d\d)/.test(err.message);
-      if (retriable && attempt < delays.length) { setStatus("", "Reconnecting…"); await new Promise(r => setTimeout(r, delays[attempt])); continue; }
+      if (retriable && attempt < delays.length) { setStatus("", "Reconnecting…"); noteActivity(`Server problem (${err.message.slice(0, 80)}). Retrying ${attempt + 1}/${delays.length}…`); await new Promise(r => setTimeout(r, delays[attempt])); continue; }
       if (err.name === "AbortError") throw new Error("the model took too long to reply");
       throw err;
     } finally { clearTimeout(timer); }
@@ -612,7 +625,7 @@ async function callJSON(endpoint, model, messages, opts) {
 const directorEndpoint = () => config.directorEndpoint || config.memberEndpoint;
 
 function recentTranscript(n = 14) {
-  return S.transcript.filter(e => e.who !== "system").slice(-n).map(e =>
+  return S.transcript.filter(e => e.who !== "system" && e.who !== "warn").slice(-n).map(e =>
     e.who === "facilitator" ? `Facilitator${e.to ? " (to " + BYID[e.to].name + ")" : ""}: ${e.text}` : `${BYID[e.who].name}: ${e.text}`
   ).join("\n") || "(nothing said yet)";
 }
@@ -776,7 +789,7 @@ function demoDirector(text, addressed) {
   const skills = detectSkills(text, addressed);
   const t = text.toLowerCase();
   const named = addressed || (MEMBERS.find(m => t.includes(m.name.toLowerCase()) || t.includes(m.name.split(" ")[0].toLowerCase())) || {}).id || null;
-  const last = [...S.transcript].reverse().find(e => e.who !== "facilitator" && e.who !== "system");
+  const last = [...S.transcript].reverse().find(e => e.who !== "facilitator" && e.who !== "system" && e.who !== "warn");
   let speakers = [], event = "", reasoning = "", silent = [];
   // stage
   const avg = MEMBERS.reduce((a, m) => a + S.members[m.id].trust, 0) / MEMBERS.length;
@@ -920,7 +933,7 @@ function setBusy(b) {
   ["sendBtn","silentBtn","micBtn"].forEach(id => document.getElementById(id).disabled = dis);
   inputEl.disabled = dis;
   document.getElementById("endBtn").disabled = !S.started || S.ended || b;
-  document.getElementById("directorBusy").classList.toggle("hidden", !b);
+  inputEl.placeholder = b ? "Waiting for the group to respond…" : "Speak to the group, e.g. “Welcome back, everyone. How has this week been?”";
   if (!dis) inputEl.focus();
 }
 function setAddressed(id) {
@@ -946,14 +959,18 @@ async function facilitatorTurn(text) {
   renderAll();
   try {
     // 1. Director decides
-    let dec, source = S.mode;
+    let dec, source = S.mode, t0 = performance.now();
+    setActivity("The director is deciding who speaks next…");
     if (S.mode === "llm") {
       try { dec = await llmDirector(isSilence ? "(The facilitator stays silent and lets the silence sit.)" : text, addressed && BYID[addressed].name); }
-      catch (e) { dec = demoDirector(text, addressed); source = "fallback"; dec.reasoning = `(Director model failed: ${e.message}. Used scripted rules.) ` + dec.reasoning; setStatus("bad", "Model error"); }
+      catch (e) { dec = demoDirector(text, addressed); source = "fallback"; dec.reasoning = `(Director model failed: ${e.message}. Used scripted rules.) ` + dec.reasoning; setStatus("bad", "Model error");
+        addLine({ turn:S.turn, who:"warn", text:`⚠ The director model failed (${e.message}), so the scripted rules chose who speaks this turn. Check Settings → Test connection.` }); }
       if (dec.stage === "storming" || S.flags.challengeDone) S.flags.challengeDone = true;
-    } else dec = demoDirector(text, addressed);
+    } else { await new Promise(r => setTimeout(r, 600)); dec = demoDirector(text, addressed); }
+    const directorSecs = ((performance.now() - t0) / 1000).toFixed(1);
     S.stage = dec.stage;
-    const record = { turn:S.turn, stage:dec.stage, skills:dec.skills, skillNote:dec.skillNote, event:dec.event, speakers:dec.speakers, reasoning:dec.reasoning, source, trustChanges:[] };
+    dec.speakers.forEach(sp => document.getElementById("m-" + sp.id).classList.add("pending"));
+    const record = { turn:S.turn, stage:dec.stage, skills:dec.skills, skillNote:dec.skillNote, event:dec.event, speakers:dec.speakers, reasoning:dec.reasoning, source, trustChanges:[], directorSecs };
     addDecision(record);
     S.transcript[S.transcript.length - 1].skills = dec.skills;
     for (const r of dec.silent || []) applyTrust(r.id, r.delta, r.why, record);
@@ -963,16 +980,24 @@ async function facilitatorTurn(text) {
       if (S.paused) await waitForResume();
       const m = BYID[sp.id];
       setTyping(m.id, true);
+      setActivity(`${m.name} is thinking about what to say…`);
+      const pend = document.createElement("div"); pend.className = "line pending"; pend.textContent = `${m.name} is about to speak…`;
+      tPanel.appendChild(pend); tPanel.scrollTop = tPanel.scrollHeight;
+      const t1 = performance.now();
       let out;
       try {
-        if (S.mode === "llm" && source !== "fallback") out = await llmMember(m, sp.instruction);
+        if (S.mode === "llm") out = await llmMember(m, sp.instruction);
         else { await new Promise(r => setTimeout(r, 500 + Math.random() * 500)); out = demoMember(m, sp.instruction, { text, addressed, skills:dec.skills, speakerEvent:sp.event }); }
       } catch (e) {
         out = demoMember(m, sp.instruction, { text, addressed, skills:dec.skills, speakerEvent:sp.event });
         record.source = "fallback";
         out.thought = `(member model failed: ${e.message}) ` + out.thought;
+        addLine({ turn:S.turn, who:"warn", text:`⚠ ${m.name}'s model failed (${e.message}), so this line is scripted.` });
       }
-      setTyping(m.id, false);
+      pend.remove();
+      setTyping(m.id, false); setActivity(null);
+      document.getElementById("m-" + m.id).classList.remove("pending");
+      if (record.el) record.el.insertAdjacentHTML("beforeend", `<div class="k">${esc(m.name)} replied in ${((performance.now() - t1) / 1000).toFixed(1)}s</div>`);
       const st = S.members[m.id];
       st.emotion = out.emotion; st.posture = out.posture; st.gaze = out.gaze; st.thought = out.thought; st.turns++;
       if (out.delta) applyTrust(m.id, out.delta, "their own reaction", record);
@@ -984,9 +1009,27 @@ async function facilitatorTurn(text) {
     }
     if (!dec.speakers.length) addLine({ turn:S.turn, who:"system", text:"The group sits in silence." });
   } finally {
+    setActivity(null);
+    document.querySelectorAll(".member.pending").forEach(e => e.classList.remove("pending"));
     setBusy(false);
   }
 }
+let actTimer = null, actStart = 0;
+function setActivity(text) {
+  const a = document.getElementById("activity");
+  clearInterval(actTimer);
+  if (!text) { a.classList.add("hidden"); return; }
+  actStart = performance.now();
+  a.querySelector(".txt").textContent = text;
+  a.querySelector(".extra").textContent = "";
+  const tick = () => {
+    const s = Math.round((performance.now() - actStart) / 1000);
+    a.querySelector(".el").textContent = s < 15 ? `${s}s` : `${s}s · local models can take a while, it's still working`;
+  };
+  tick(); actTimer = setInterval(tick, 500);
+  a.classList.remove("hidden");
+}
+function noteActivity(t) { const x = document.querySelector("#activity .extra"); if (x) x.textContent = t; }
 function applyTrust(id, delta, why, record) {
   if (!delta) return;
   const st = S.members[id];
@@ -1007,7 +1050,7 @@ function skillCounts() {
 async function llmObserver() {
   const sys = `You are an experienced group counselling supervisor observing a trainee in a training simulation. Give a fair, specific, encouraging debrief grounded in the transcript. Refer to turn numbers. Reply with ONLY JSON:
 {"summary":"3-4 sentences","strengths":[{"turn":1,"note":"..."}],"growth":[{"turn":1,"note":"..."}],"members":[{"id":"memberid","note":"how this member experienced the session"}],"next_time":["...","..."]}`;
-  const lines = S.transcript.filter(e => e.who !== "system").map(e =>
+  const lines = S.transcript.filter(e => e.who !== "system" && e.who !== "warn").map(e =>
     e.who === "facilitator" ? `[turn ${e.turn}] Facilitator: ${e.text}  {skills: ${(e.skills || []).join(", ")}}` : `[turn ${e.turn}] ${BYID[e.who].name} (trust now ${e.trust}): ${e.text}  {private thought: ${e.thought || "-"}}`).join("\n");
   const hidden = MEMBERS.map(m => `- ${m.id} (${m.name}, ${m.role}): hidden story: ${m.hidden}. Trust ${S.members[m.id].startTrust} → ${S.members[m.id].trust}.`).join("\n");
   const obj = await callJSON(directorEndpoint(), config.directorModel, [{ role:"system", content:sys }, { role:"user", content:`Members:\n${hidden}\n\nTranscript:\n${lines}` }], { temperature:0.3, max_tokens:900 });
