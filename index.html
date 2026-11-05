@@ -279,6 +279,7 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
     <div class="field"><label for="memberModel">Model</label><input id="memberModel" type="text"></div>
     <h3>Director and observer (they make the decisions)</h3>
     <div class="field"><label for="directorEndpoint">Chat completions URL</label><input id="directorEndpoint" type="text"><div class="hint">Leave this empty to use the members' server.</div></div>
+    <div class="field"><label for="autonomy">How much the group talks on its own</label><select id="autonomy"><option value="low">Low: members answer you, then wait</option><option value="medium">Medium: up to 3 exchanges among members</option><option value="high">High: up to 6 exchanges, so you have to manage the flow</option></select><div class="hint">You can always jump in while they talk.</div></div>
     <div class="field"><label for="directorModel">Model</label><input id="directorModel" type="text"><div class="hint">Use a non-thinking instruct model. The director replies with JSON, and thinking models tend to use up their token budget before they answer.</div></div>
     <div class="hint" id="testResult"></div>
     <div class="actions">
@@ -305,6 +306,7 @@ const DEFAULTS = {
   memberModel: "qwen2.5-14b-instruct",
   directorEndpoint: "https://lsctdscoma002.tailfeee99.ts.net/v1/chat/completions",
   directorModel: "qwen/qwen3-4b-2507",
+  autonomy: "medium",
 };
 function store(k, v) { try { if (v === undefined) return localStorage.getItem("groupsim_" + k); localStorage.setItem("groupsim_" + k, v); } catch (e) { return null; } }
 const config = {};
@@ -538,12 +540,13 @@ function addDecision(dec) {
   const speakers = (dec.speakers || []).map(s => `<b>${esc(BYID[s.id]?.name || s.id)}</b>: <span class="k">${esc(s.instruction || "")}</span>`).join("<br>");
   const trust = (dec.trustChanges || []).map(c => `<span class="chip">${esc(BYID[c.id].name)} <span class="dd ${c.delta > 0 ? "up" : "down"}">${c.delta > 0 ? "+" : ""}${c.delta}</span>${c.why ? ` <span class="k">${esc(c.why)}</span>` : ""}</span>`).join("");
   d.innerHTML = `
-    <h4>Turn ${dec.turn} <span class="chip">stage: ${esc(dec.stage)}</span>${dec.directorSecs ? ` <span class="k">decided in ${dec.directorSecs}s</span>` : ""}${dec.source === "fallback" ? ' <span class="chip neg">scripted fallback</span>' : ""}</h4>
+    <h4>Turn ${dec.turn}${dec.beat ? ` · group continues (${dec.beat})` : ""} <span class="chip">stage: ${esc(dec.stage)}</span>${dec.directorSecs ? ` <span class="k">decided in ${dec.directorSecs}s</span>` : ""}${dec.source === "fallback" ? ' <span class="chip neg">scripted fallback</span>' : ""}</h4>
     ${skills ? `<div class="k">Your move:</div><div>${skills}</div>` : ""}
     ${dec.skillNote ? `<p>${esc(dec.skillNote)}</p>` : ""}
     ${dec.event ? `<p><span class="k">Event introduced:</span> ${esc(dec.event)}</p>` : ""}
     <p><span class="k">Director chose:</span><br>${speakers || "<i>no one speaks</i>"}</p>
     ${dec.reasoning ? `<p><span class="k">Why:</span> ${esc(dec.reasoning)}</p>` : ""}
+    <p class="k">${dec.cont ? "Director expects the group to keep talking on its own." : "Director expects the group to turn back to you after this."}</p>
     ${trust ? `<div class="k">Trust changes:</div><div class="trust">${trust}</div>` : ""}`;
   dec.el = d;
   dPanel.appendChild(d); dPanel.scrollTop = dPanel.scrollHeight;
@@ -697,8 +700,9 @@ const DIRECTOR_SCHEMA = {
     speakers:{ type:"array", items:{ type:"object", additionalProperties:false, properties:{ id:{ type:"string", enum:MEMBERS.map(m => m.id) }, instruction:{ type:"string" } }, required:["id","instruction"] } },
     silent_reactions:{ type:"array", items:{ type:"object", additionalProperties:false, properties:{ id:{ type:"string", enum:MEMBERS.map(m => m.id) }, trust_delta:{ type:"integer" }, why:{ type:"string" } }, required:["id","trust_delta","why"] } },
     reasoning:{ type:"string" },
+    continue:{ type:"boolean" },
   },
-  required:["skills","skill_note","stage","event","speakers","silent_reactions","reasoning"],
+  required:["skills","skill_note","stage","event","speakers","silent_reactions","reasoning","continue"],
 };
 const MEMBER_SCHEMA = {
   type:"object", additionalProperties:false,
@@ -761,9 +765,10 @@ Your job each turn:
    - The sceptic (daniel) challenges the facilitator or the group during storming.
    - Give each chosen speaker a short private instruction about what to do (react, challenge, deflect, open up a little, and so on). Do not script their words.
 4. Optionally note silent reactions: members who do not speak but whose trust changes because of the facilitator's move (for example, others feel safer when a dominant member is blocked kindly). Use trust_delta -1 or +1.
+5. Decide "continue": true if, after these speakers, the group would naturally keep talking among themselves without waiting for the facilitator (someone wants to reply to another member, a disagreement is building, the dominant member keeps going, members are connecting). false if the group would fall quiet and look to the facilitator, or a member has just asked the facilitator something. Real groups often carry on for a few exchanges, so do not always hand back to the facilitator; this is how the trainee practises managing the group.
 
 Reply with ONLY a JSON object, no other text:
-{"skills":["..."],"skill_note":"one sentence of feedback on the facilitator's move","stage":"forming|storming|norming|working","event":"short description of any dynamic you are introducing, or empty string","speakers":[{"id":"memberid","instruction":"..."}],"silent_reactions":[{"id":"memberid","trust_delta":1,"why":"..."}],"reasoning":"one or two sentences on why you chose this"}`;
+{"skills":["..."],"skill_note":"one sentence of feedback on the facilitator's move","stage":"forming|storming|norming|working","event":"short description of any dynamic you are introducing, or empty string","speakers":[{"id":"memberid","instruction":"..."}],"silent_reactions":[{"id":"memberid","trust_delta":1,"why":"..."}],"reasoning":"one or two sentences on why you chose this","continue":true}`;
 }
 async function llmDirector(facText, addressed) {
   const user = `Turn ${S.turn}. Current stage: ${S.stage}.
@@ -778,13 +783,31 @@ Facilitator's latest move${addressed ? " (addressed to " + addressed + ")" : ""}
     [{ role:"system", content:directorSystemPrompt() }, { role:"user", content:user }], { temperature:0.4, max_tokens:700, onProgress:progressReporter(), schema:DIRECTOR_SCHEMA });
   return normaliseDecision(obj);
 }
+async function llmDirectorBeat(beat) {
+  const user = `Turn ${S.turn}. Current stage: ${S.stage}.
+Member state:
+${memberSummary()}
+
+Recent conversation:
+${recentTranscript(18)}
+
+There is NO new facilitator move. The members have been talking for ${beat} exchange(s) since the facilitator last spoke. Decide whether the conversation carries on among the members right now: who naturally speaks next (usually 1, at most 2), for example replying to what another member just said, asking another member something, disagreeing, rescuing, joking, or taking over. Their instruction should say who they are responding to. Leave "skills" empty and "skill_note" empty, because the facilitator did not speak.
+If the group would fall quiet and look to the facilitator now, return an empty speakers list and continue false.`;
+  const obj = await callJSON(directorEndpoint(), config.directorModel,
+    [{ role:"system", content:directorSystemPrompt() }, { role:"user", content:user }], { temperature:0.5, max_tokens:500, onProgress:progressReporter(), schema:DIRECTOR_SCHEMA });
+  const d = normaliseDecision(obj);
+  d.skills = []; d.skillNote = "";
+  d.speakers = d.speakers.slice(0, 2);
+  return d;
+}
 function normaliseDecision(obj) {
   const skills = (Array.isArray(obj.skills) ? obj.skills : []).map(s => String(s).toLowerCase().trim().replace(/\s+/g, "_")).filter(s => SKILLS[s]);
   let speakers = (Array.isArray(obj.speakers) ? obj.speakers : []).map(s => ({ id: String(s.id || s.name || "").toLowerCase().replace(/\s+/g, ""), instruction: String(s.instruction || "") })).filter(s => BYID[s.id]);
   const seen = new Set(); speakers = speakers.filter(s => !seen.has(s.id) && seen.add(s.id)).slice(0, 5);
   const silent = (Array.isArray(obj.silent_reactions) ? obj.silent_reactions : []).map(r => ({ id:String(r.id || "").toLowerCase(), delta: clamp(Math.round(+r.trust_delta || 0), -1, 1), why:String(r.why || "") })).filter(r => BYID[r.id] && r.delta && !speakers.some(s => s.id === r.id));
   const stage = ["forming","storming","norming","working"].includes(obj.stage) ? obj.stage : S.stage;
-  return { skills, skillNote:String(obj.skill_note || ""), stage, event:String(obj.event || ""), speakers, silent, reasoning:String(obj.reasoning || "") };
+  const cont = obj.continue === true || obj.continue === "true";
+  return { skills, skillNote:String(obj.skill_note || ""), stage, event:String(obj.event || ""), speakers, silent, reasoning:String(obj.reasoning || ""), cont };
 }
 
 /* ---------- Members ---------- */
@@ -800,7 +823,8 @@ You open up when ${m.opens}. You shut down when ${m.shuts}.
 Other members: ${others}. The facilitator is the trainee.
 
 Rules:
-- Say 1 to 3 short spoken sentences, like real conversation. No markdown, no stage directions, no name prefix.
+- Speak like real conversation: usually 2 to 4 sentences. When you feel safe and the topic matters to you, say more (up to 5 or 6 sentences, with a concrete detail or example). When you feel guarded, keep it to a few words. No markdown, no stage directions, no name prefix.
+- You are in a group, not an interview: respond to what other members said, use their names, agree, disagree or ask them a question when it fits.
 - If it fits (for example low trust, or the director says so), you may respond only non-verbally: set "text" to "" and describe it briefly in "action" (e.g. "nods without looking up"). Otherwise set "action" to "".
 - How much you share depends on your trust (0-10). Low trust: guarded, short, deflecting. Medium: some honesty. High: you may share part of your private story.
 - Do not talk about wanting to harm yourself or about suicide in this version of the simulation.
@@ -819,7 +843,7 @@ ${recentTranscript()}
 Director's private note for your next turn (do not repeat it): ${instruction || "respond naturally"}
 Now give your turn as JSON.`;
   const obj = await callJSON(config.memberEndpoint, config.memberModel,
-    [{ role:"system", content:memberSystemPrompt(m) }, { role:"user", content:user }], { temperature:0.85, max_tokens:300, onProgress:progressReporter(), schema:MEMBER_SCHEMA, plainTextOk:true });
+    [{ role:"system", content:memberSystemPrompt(m) }, { role:"user", content:user }], { temperature:0.85, max_tokens:450, onProgress:progressReporter(), schema:MEMBER_SCHEMA, plainTextOk:true });
   if (obj.__plain) return { ...normaliseMember({ text: plainToLine(obj.__plain, m) }, m.id), plain: true };
   return normaliseMember(obj, m.id);
 }
@@ -976,7 +1000,27 @@ function demoDirector(text, addressed) {
   const pos = skills.filter(s => !NEG_SKILLS.has(s) && s !== "other"), neg = skills.filter(s => NEG_SKILLS.has(s));
   const skillNote = neg.length ? `Careful: ${neg.map(s => SKILLS[s].toLowerCase()).join(" and ")} can close members down at this stage.` :
     pos.length ? `${pos.map(s => SKILLS[s]).join(" + ")}: this helps build safety.` : "A neutral move; try reflecting a feeling or drawing someone out.";
-  return { skills, skillNote, stage, event, speakers, silent: silent.filter(s => s.delta), reasoning };
+  return { skills, skillNote, stage, event, speakers, silent: silent.filter(s => s.delta), reasoning, cont: speakers.length > 0 && Math.random() < .7 };
+}
+function demoBeat(beat) {
+  const said = S.transcript.filter(e => e.turn === S.turn && BYID[e.who]);
+  const last = said[said.length - 1];
+  const spokeNow = new Set(said.map(e => e.who));
+  let sp, reasoning, event = "";
+  if (last && last.who === "farah" && !S.flags.rescueDone) {
+    sp = { id:"aisyah", instruction:"Rush in to comfort Farah with advice.", event:"rescue" }; S.flags.rescueDone = true;
+    event = "Aisyah rushes to rescue Farah with advice."; reasoning = "Farah showed pain, and the rescuer's pattern is to fix it quickly.";
+  } else if (last && last.who !== "ravi" && S.turn - S.flags.lastBlockTurn > 2 && Math.random() < .45) {
+    sp = { id:"ravi", instruction:`Jump in after ${BYID[last.who].name} and take over.`, event:"interrupt" };
+    event = "Ravi jumps in and takes over the conversation."; reasoning = "Nobody has held Ravi back, so he fills the space.";
+  } else {
+    const cand = MEMBERS.filter(m => !spokeNow.has(m.id) && S.members[m.id].trust >= 4);
+    if (!cand.length) return { skills:[], skillNote:"", stage:S.stage, event:"", speakers:[], silent:[], reasoning:"Everyone who feels safe enough has spoken, so the group looks to you.", cont:false };
+    const m = R(cand);
+    sp = { id:m.id, instruction:`React to what ${last ? BYID[last.who].name : "the others"} said.` };
+    reasoning = `${m.name} feels safe enough to add to what ${last ? BYID[last.who].name : "the others"} said.`;
+  }
+  return { skills:[], skillNote:"", stage:S.stage, event, speakers:[sp], silent:[], reasoning, cont: Math.random() < (beat < 2 ? .75 : .45) };
 }
 function demoMember(m, instruction, ctx) {
   const st = S.members[m.id];
@@ -1023,7 +1067,10 @@ function speak(m, text, action) {
   el.classList.add("speaking"); renderMember(m.id);
   const done = () => { el.classList.remove("speaking"); setTimeout(() => say.classList.remove("show"), 2500); renderMember(m.id); };
   if (!S.voice || !("speechSynthesis" in window)) {
-    return new Promise(r => setTimeout(() => { done(); r(); }, clamp(text.length * 38, 1400, 6000)));
+    return new Promise(r => {
+      const t = setTimeout(() => { S.cancelSpeak = null; done(); r("done"); }, clamp(text.length * 45, 1600, 9000));
+      S.cancelSpeak = () => { clearTimeout(t); done(); r("cut"); };
+    });
   }
   return new Promise(resolve => {
     const u = new SpeechSynthesisUtterance(text);
@@ -1031,8 +1078,9 @@ function speak(m, text, action) {
     if (voices.length) u.voice = voices[(idx * 3) % voices.length];
     u.pitch = m.voice.pitch; u.rate = m.voice.rate;
     let finished = false;
-    const fin = () => { if (finished) return; finished = true; done(); resolve(); };
-    u.onend = fin; u.onerror = fin;
+    const fin = (how) => { if (finished) return; finished = true; S.cancelSpeak = null; done(); resolve(how === "cut" ? "cut" : "done"); };
+    u.onend = () => fin(); u.onerror = () => fin();
+    S.cancelSpeak = () => { try { speechSynthesis.cancel(); } catch (e) {} fin("cut"); };
     setTimeout(fin, 20000 + text.length * 80); // never hang the turn on a stuck engine
     speechSynthesis.speak(u);
   });
@@ -1065,12 +1113,14 @@ function riskCheck(text, who) {
 const inputEl = document.getElementById("input");
 function setBusy(b) {
   S.busy = b;
-  const dis = b || !S.started || S.paused || S.ended;
-  ["sendBtn","silentBtn","micBtn"].forEach(id => document.getElementById(id).disabled = dis);
-  inputEl.disabled = dis;
+  const off = !S.started || S.paused || S.ended;
+  ["sendBtn","micBtn"].forEach(id => document.getElementById(id).disabled = off);
+  document.getElementById("silentBtn").disabled = off || b;
+  inputEl.disabled = off;
+  document.getElementById("sendBtn").textContent = b ? "Jump in" : "Say";
   document.getElementById("endBtn").disabled = !S.started || S.ended || b;
-  inputEl.placeholder = b ? "Waiting for the group to respond…" : "Speak to the group, e.g. “Welcome back, everyone. How has this week been?”";
-  if (!dis) inputEl.focus();
+  inputEl.placeholder = b ? "The group is talking. Type here to jump in and they'll stop for you…" : "Speak to the group, e.g. “Welcome back, everyone. How has this week been?”";
+  if (!off) inputEl.focus();
 }
 function setAddressed(id) {
   if (!S.started || S.ended) return;
@@ -1081,10 +1131,32 @@ function setAddressed(id) {
 }
 document.getElementById("addrClear").onclick = () => setAddressed(null);
 
+/* ------------------------------------------------------------
+   One facilitator move, then the group may keep talking on its own.
+   1. The director decides who responds to the facilitator.
+   2. Those members speak (each reply is generated while the previous
+      member is still talking).
+   3. "Beats": the director looks again with no new facilitator move and
+      decides whether the conversation carries on among the members
+      (reacting to each other, asking each other things, a dominant
+      member taking over) or falls quiet and turns back to the
+      facilitator. Up to AUTONOMY[config.autonomy] beats.
+   The facilitator can jump in at any time: sending while the group is
+   talking stops the current speaker and starts a new facilitator turn.
+   ------------------------------------------------------------ */
+const AUTONOMY = { low: 0, medium: 3, high: 6 };
 async function facilitatorTurn(text) {
-  if (S.busy || !S.started || S.ended) return;
+  if (!S.started || S.ended) return;
   const isSilence = text === "[silence]";
   text = text.trim(); if (!text) return;
+  if (S.busy) {
+    if (isSilence) return;
+    S.interrupt = { text, addressed: S.addressed };
+    inputEl.value = "";
+    setActivity("You're stepping in. The group stops and turns to you…");
+    cancelSpeech();
+    return;
+  }
   S.turn++;
   const addressed = S.addressed;
   addLine({ turn:S.turn, who:"facilitator", text: isSilence ? "(holds the silence)" : text, to: addressed });
@@ -1094,80 +1166,115 @@ async function facilitatorTurn(text) {
   setBusy(true);
   renderAll();
   try {
-    // 1. Director decides
-    let dec, source = S.mode, t0 = performance.now();
-    setActivity("The director is deciding who speaks next…");
-    if (S.mode === "llm") {
-      try { dec = await llmDirector(isSilence ? "(The facilitator stays silent and lets the silence sit.)" : text, addressed && BYID[addressed].name); }
-      catch (e) { dec = demoDirector(text, addressed); source = "fallback"; dec.reasoning = `(Director model failed: ${e.message}. Used scripted rules.) ` + dec.reasoning; setStatus("bad", "Model error");
-        addLine({ turn:S.turn, who:"warn", text:`⚠ The director model failed (${e.message}), so the scripted rules chose who speaks this turn. Check Settings → Test connection.` }); }
-      if (dec.stage === "storming" || S.flags.challengeDone) S.flags.challengeDone = true;
-    } else { await new Promise(r => setTimeout(r, 600)); dec = demoDirector(text, addressed); }
-    const directorSecs = ((performance.now() - t0) / 1000).toFixed(1);
-    S.stage = dec.stage;
-    dec.speakers.forEach((sp, i) => {
-      const el = document.getElementById("m-" + sp.id);
-      el.classList.add("pending");
-      el.querySelector(".name").dataset.next = i === 0 ? "up next" : `#${i + 1} in line`;
-    });
-    const record = { turn:S.turn, stage:dec.stage, skills:dec.skills, skillNote:dec.skillNote, event:dec.event, speakers:dec.speakers, reasoning:dec.reasoning, source, trustChanges:[], directorSecs };
-    addDecision(record);
-    S.transcript[S.transcript.length - 1].skills = dec.skills;
-    for (const r of dec.silent || []) applyTrust(r.id, r.delta, r.why, record);
-    renderAll();
-    // 2. Each chosen member takes a turn. The next member's reply is
-    //    generated while the current one is speaking, so a whole-group
-    //    round doesn't take N times as long. It still sees the lines
-    //    already said, because it starts after they're in the transcript.
-    const n = dec.speakers.length;
-    const genFor = sp => {
-      const m = BYID[sp.id], t1 = performance.now();
-      setTyping(m.id, true);
-      const ctx = { text, addressed, skills:dec.skills, speakerEvent:sp.event };
-      return (async () => {
-        try {
-          if (S.mode === "llm") return { out: await llmMember(m, sp.instruction) };
-          await new Promise(r => setTimeout(r, 500 + Math.random() * 500));
-          return { out: demoMember(m, sp.instruction, ctx) };
-        } catch (e) { return { out: demoMember(m, sp.instruction, ctx), err: e }; }
-      })().then(r => ({ ...r, secs: (performance.now() - t1) / 1000 }));
-    };
-    let next = n ? genFor(dec.speakers[0]) : null;
-    for (let i = 0; i < n; i++) {
+    // 1. Director decides who responds to the facilitator
+    const facMove = isSilence ? "(The facilitator stays silent and lets the silence sit.)" : text;
+    const first = await directorStep(() => llmDirector(facMove, addressed && BYID[addressed].name), () => demoDirector(text, addressed), "The director is deciding who responds…");
+    S.transcript.filter(e => e.who === "facilitator").slice(-1)[0].skills = first.dec.skills;
+    await runSpeakers(first.dec, first.record, { text, addressed, skills:first.dec.skills });
+    if (!first.dec.speakers.length) addLine({ turn:S.turn, who:"system", text:"The group sits in silence." });
+    // 3. The group carries on by itself while it naturally would
+    let more = first.dec.cont, beat = 0;
+    const maxBeats = AUTONOMY[config.autonomy] ?? AUTONOMY.medium;
+    while (more && beat < maxBeats && !S.interrupt && !S.ended) {
+      beat++;
       if (S.paused) await waitForResume();
-      const sp = dec.speakers[i], m = BYID[sp.id];
-      setActivity(`${m.name} is thinking about what to say…` + (n > 1 ? ` (${i + 1} of ${n})` : ""));
-      const pend = document.createElement("div"); pend.className = "line pending"; pend.textContent = `${m.name} is about to speak…`;
-      tPanel.appendChild(pend); tPanel.scrollTop = tPanel.scrollHeight;
-      const r = await next;
-      const out = r.out;
-      if (r.err) {
-        record.source = "fallback";
-        out.thought = `(member model failed: ${r.err.message}) ` + out.thought;
-        addLine({ turn:S.turn, who:"warn", text:`⚠ ${m.name}'s model failed (${r.err.message}), so this line is scripted.` });
-      }
-      pend.remove();
-      setTyping(m.id, false); setActivity(null);
-      const mel = document.getElementById("m-" + m.id); mel.classList.remove("pending"); mel.querySelector(".name").removeAttribute("data-next");
-      dec.speakers.slice(i + 1).forEach((s2, j) => document.querySelector(`#m-${s2.id} .name`).dataset.next = j === 0 ? "up next" : `#${j + 2} in line`);
-      if (record.el) record.el.insertAdjacentHTML("beforeend", `<div class="k">${esc(m.name)} replied in ${r.secs.toFixed(1)}s${out.plain ? " (plain speech, not structured, so no body language or private thought this time)" : ""}</div>`);
-      const st = S.members[m.id];
-      st.emotion = out.emotion; st.posture = out.posture; st.gaze = out.gaze; st.thought = out.thought; st.turns++;
-      if (out.delta) applyTrust(m.id, out.delta, "their own reaction", record);
-      for (const [o, v] of Object.entries(out.feelings || {})) { const k = relKey(m.id, o); S.rel[k] = clamp((S.rel[k] || 0) + v, -3, 3); }
-      addLine({ turn:S.turn, who:m.id, text:out.text, action:out.action, thought:out.thought, event:sp.event, emotion:out.emotion, trust:st.trust });
-      riskCheck(out.text, m.name);
-      renderAll();
-      next = i + 1 < n ? genFor(dec.speakers[i + 1]) : null;
-      await speak(m, out.text, out.action);
+      const step = await directorStep(() => llmDirectorBeat(beat), () => demoBeat(beat), "The group is talking among themselves. Jump in any time…", beat);
+      if (!step.dec.speakers.length) break;
+      await runSpeakers(step.dec, step.record, { text:"", addressed:null, skills:[] });
+      more = step.dec.cont;
     }
-    if (!dec.speakers.length) addLine({ turn:S.turn, who:"system", text:"The group sits in silence." });
+    if (!S.interrupt && beat > 0) addLine({ turn:S.turn, who:"system", text:"The group goes quiet and looks to you." });
   } finally {
     setActivity(null);
-    document.querySelectorAll(".member.pending").forEach(e => e.classList.remove("pending"));
+    document.querySelectorAll(".member.pending").forEach(e => { e.classList.remove("pending"); e.querySelector(".name").removeAttribute("data-next"); });
+    MEMBERS.forEach(m => setTyping(m.id, false));
     setBusy(false);
   }
+  if (S.interrupt) {
+    const it = S.interrupt; S.interrupt = null;
+    if (it.addressed) setAddressed(it.addressed);
+    facilitatorTurn(it.text);
+  }
 }
+async function directorStep(llmFn, demoFn, label, beat = 0) {
+  let dec, source = S.mode;
+  const t0 = performance.now();
+  setActivity(label);
+  if (S.mode === "llm") {
+    try { dec = await llmFn(); }
+    catch (e) {
+      dec = demoFn(); source = "fallback"; setStatus("bad", "Model error");
+      dec.reasoning = `(Director model failed: ${e.message}. Used scripted rules.) ` + dec.reasoning;
+      addLine({ turn:S.turn, who:"warn", text:`⚠ The director model failed (${e.message}), so the scripted rules chose who speaks. Check Settings → Test connection.` });
+    }
+    if (dec.stage === "storming") S.flags.challengeDone = true;
+  } else { await new Promise(r => setTimeout(r, 600)); dec = demoFn(); }
+  S.stage = dec.stage;
+  const record = { turn:S.turn, beat, stage:dec.stage, skills:dec.skills, skillNote:dec.skillNote, event:dec.event, speakers:dec.speakers, reasoning:dec.reasoning, cont:dec.cont, source, trustChanges:[], directorSecs:((performance.now() - t0) / 1000).toFixed(1) };
+  addDecision(record);
+  for (const r of dec.silent || []) applyTrust(r.id, r.delta, r.why, record);
+  dec.speakers.forEach((sp, i) => {
+    const el = document.getElementById("m-" + sp.id);
+    el.classList.add("pending");
+    el.querySelector(".name").dataset.next = i === 0 ? "up next" : `#${i + 1} in line`;
+  });
+  renderAll();
+  return { dec, record };
+}
+async function runSpeakers(dec, record, ctxBase) {
+  // Each reply is generated while the previous member is still talking.
+  // It still sees the lines already said, because it starts after they
+  // are in the transcript.
+  const n = dec.speakers.length;
+  const genFor = sp => {
+    const m = BYID[sp.id], t1 = performance.now();
+    setTyping(m.id, true);
+    const ctx = { ...ctxBase, speakerEvent:sp.event };
+    return (async () => {
+      try {
+        if (S.mode === "llm") return { out: await llmMember(m, sp.instruction) };
+        await new Promise(r => setTimeout(r, 500 + Math.random() * 500));
+        return { out: demoMember(m, sp.instruction, ctx) };
+      } catch (e) { return { out: demoMember(m, sp.instruction, ctx), err: e }; }
+    })().then(r => ({ ...r, secs: (performance.now() - t1) / 1000 }));
+  };
+  let next = n ? genFor(dec.speakers[0]) : null;
+  for (let i = 0; i < n; i++) {
+    if (S.interrupt) break;
+    if (S.paused) await waitForResume();
+    const sp = dec.speakers[i], m = BYID[sp.id];
+    setActivity(`${m.name} is thinking about what to say…` + (n > 1 ? ` (${i + 1} of ${n})` : ""));
+    const pend = document.createElement("div"); pend.className = "line pending"; pend.textContent = `${m.name} is about to speak…`;
+    tPanel.appendChild(pend); tPanel.scrollTop = tPanel.scrollHeight;
+    const r = await next;
+    pend.remove();
+    setTyping(m.id, false);
+    if (S.interrupt) break; // the facilitator stepped in while this reply was being written
+    setActivity(null);
+    const out = r.out;
+    if (r.err) {
+      record.source = "fallback";
+      out.thought = `(member model failed: ${r.err.message}) ` + out.thought;
+      addLine({ turn:S.turn, who:"warn", text:`⚠ ${m.name}'s model failed (${r.err.message}), so this line is scripted.` });
+    }
+    const mel = document.getElementById("m-" + m.id); mel.classList.remove("pending"); mel.querySelector(".name").removeAttribute("data-next");
+    dec.speakers.slice(i + 1).forEach((s2, j) => document.querySelector(`#m-${s2.id} .name`).dataset.next = j === 0 ? "up next" : `#${j + 2} in line`);
+    if (record.el) record.el.insertAdjacentHTML("beforeend", `<div class="k">${esc(m.name)} replied in ${r.secs.toFixed(1)}s${out.plain ? " (plain speech, not structured, so no body language or private thought this time)" : ""}</div>`);
+    const st = S.members[m.id];
+    st.emotion = out.emotion; st.posture = out.posture; st.gaze = out.gaze; st.thought = out.thought; st.turns++;
+    if (out.delta) applyTrust(m.id, out.delta, "their own reaction", record);
+    for (const [o, v] of Object.entries(out.feelings || {})) { const k = relKey(m.id, o); S.rel[k] = clamp((S.rel[k] || 0) + v, -3, 3); }
+    const entry = { turn:S.turn, who:m.id, text:out.text, action:out.action, thought:out.thought, event:sp.event, emotion:out.emotion, trust:st.trust };
+    addLine(entry);
+    riskCheck(out.text, m.name);
+    renderAll();
+    next = i + 1 < n ? genFor(dec.speakers[i + 1]) : null;
+    const finished = await speak(m, out.text, out.action);
+    if (finished === "cut") { entry.interrupted = true; const el = document.getElementById("line-" + (S.transcript.indexOf(entry))); if (el) el.querySelector(".txt").insertAdjacentHTML("beforeend", ' <span class="act">(you cut in)</span>'); }
+  }
+  dec.speakers.forEach(sp => { const el = document.getElementById("m-" + sp.id); el.classList.remove("pending"); el.querySelector(".name").removeAttribute("data-next"); setTyping(sp.id, false); });
+}
+function cancelSpeech() { if (S.cancelSpeak) { const c = S.cancelSpeak; S.cancelSpeak = null; c(); } }
 let actTimer = null, actStart = 0;
 function setActivity(text) {
   const a = document.getElementById("activity");
@@ -1321,7 +1428,7 @@ document.getElementById("resumeBtn").onclick = () => {
 };
 
 // settings
-const fields = ["memberEndpoint","memberModel","directorEndpoint","directorModel"];
+const fields = ["memberEndpoint","memberModel","directorEndpoint","directorModel","autonomy"];
 function openSettings() { fields.forEach(f => document.getElementById(f).value = config[f]); document.getElementById("testResult").textContent = ""; document.getElementById("settingsModal").classList.remove("hidden"); }
 document.getElementById("settingsBtn").onclick = openSettings;
 document.getElementById("startSettingsBtn").onclick = openSettings;

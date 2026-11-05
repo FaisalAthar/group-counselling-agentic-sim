@@ -4,6 +4,7 @@ A training simulation for trainee group counsellors. The trainee facilitates a f
 
 - **Members (5 agents):** Ravi (dominates the talk), Mei Ling (silent member), Daniel (sceptic), Aisyah (rescuer) and Farah (grieving). Each has a public profile and a hidden story. A member shares their hidden story only once their trust in the group is high.
 - **Director (1 agent):** after each facilitator move it labels the counselling skill used, sets the group stage (forming, storming, norming, working), picks who speaks next with a private instruction, and notes silent trust changes in members who don't speak.
+- **The group talks on its own:** after members respond to the facilitator, the director decides whether the conversation carries on among them (replying to each other, disagreeing, Ravi taking over) or falls quiet and turns back to the facilitator. The facilitator can jump in at any time, which stops the current speaker. **Settings → How much the group talks on its own** sets the limit: Low (no exchanges), Medium (up to 3) or High (up to 6).
 - **Observer (1 agent):** writes the end-of-session debrief, with links back to specific turns.
 
 Every agent replies in JSON (`text`, `emotion`, `gaze`, `posture`, `trust_delta`, `private_thought`, `feelings`). The circle is drawn from that JSON:
