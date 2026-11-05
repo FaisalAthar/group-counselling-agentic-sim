@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Group Circle Simulator</title>
+<style>
+:root{
+  --bg:#f4f1ec; --surface:#ffffff; --surface-2:#f8f6f2; --ink:#22252b; --ink-2:#5b616b; --line:#e2ddd4;
+  --accent:#3b6ea8; --accent-ink:#ffffff; --stage:#ebe5da; --stage-floor:#e2d9ca;
+  --good:#3f9a6b; --bad:#c9503f; --warn:#c98a1f; --chip:#eef1f6;
+  --bubble:#ffffff; --thought:#f3eefc; --thought-ink:#4b3f72;
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 4px 14px rgba(0,0,0,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16181d; --surface:#1f2228; --surface-2:#262a31; --ink:#e9e7e2; --ink-2:#a3a8b1; --line:#343943;
+    --accent:#6f9fd8; --accent-ink:#0f1520; --stage:#23272e; --stage-floor:#2b3038;
+    --good:#5cc08b; --bad:#e2735f; --warn:#e0a94a; --chip:#2b3039;
+    --bubble:#2c3038; --thought:#2f2a40; --thought-ink:#d4c9f5;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 14px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#16181d; --surface:#1f2228; --surface-2:#262a31; --ink:#e9e7e2; --ink-2:#a3a8b1; --line:#343943;
+  --accent:#6f9fd8; --accent-ink:#0f1520; --stage:#23272e; --stage-floor:#2b3038;
+  --good:#5cc08b; --bad:#e2735f; --warn:#e0a94a; --chip:#2b3039;
+  --bubble:#2c3038; --thought:#2f2a40; --thought-ink:#d4c9f5;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 14px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer}
+.hidden{display:none!important}
+
+/* ---------- header ---------- */
+header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.1px}
+header .sub{color:var(--ink-2);font-size:13px}
+.spacer{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 9px;border-radius:999px;background:var(--chip);color:var(--ink-2)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ink-2)}
+.dot.ok{background:var(--good)} .dot.bad{background:var(--bad)}
+.tbtn{border:1px solid var(--line);background:var(--surface);padding:5px 10px;border-radius:8px;font-size:13px}
+.tbtn[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn{border:0;background:var(--accent);color:var(--accent-ink);padding:8px 14px;border-radius:9px;font-weight:600}
+.btn.secondary{background:var(--chip);color:var(--ink)}
+.btn.danger{background:var(--bad);color:#fff}
+.btn:disabled,.tbtn:disabled{opacity:.5;cursor:default}
+
+/* ---------- layout ---------- */
+main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:14px;padding:14px 16px;max-width:1500px;margin:0 auto}
+@media (max-width:900px){main{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+
+/* ---------- stage ---------- */
+.stage-wrap{padding:10px}
+.stage-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:2px 4px 8px}
+.stage-badge{font-size:12px;padding:3px 9px;border-radius:999px;background:var(--chip)}
+.stage-badge b{font-weight:650}
+#activity{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);z-index:7;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:9px 14px;box-shadow:var(--shadow);font-size:13.5px;display:flex;gap:10px;align-items:center;max-width:78%}
+#activity .txt{font-weight:600}
+#activity .el{color:var(--ink-2);font-variant-numeric:tabular-nums;font-size:12.5px}
+#activity .extra{color:var(--warn);font-size:12px}
+#activity .prog{color:var(--accent);font-size:12px}
+.spinner{width:16px;height:16px;flex:none;border:2.5px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.member.pending .fig{filter:drop-shadow(0 0 8px var(--accent))}
+.member.pending .name::after{content:" · up next";color:var(--accent);font-weight:600}
+.line.pending{color:var(--ink-2);font-style:italic;font-size:13px}
+.line.warn{background:color-mix(in srgb,var(--warn) 14%,transparent);border-radius:8px;padding:6px 9px;font-size:12.5px}
+#stage{position:relative;width:100%;aspect-ratio:4/3;border-radius:12px;overflow:hidden;
+  background:radial-gradient(ellipse 62% 55% at 50% 52%,var(--stage-floor) 0 60%,var(--stage) 61%);}
+#stage .rug{position:absolute;left:50%;top:52%;width:44%;height:36%;transform:translate(-50%,-50%);border-radius:50%;border:2px dashed var(--line);opacity:.8}
+#lines{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#lines line{vector-effect:non-scaling-stroke;transition:stroke .6s,stroke-width .6s,opacity .6s}
+.member{position:absolute;width:17%;min-width:74px;transform:translate(-50%,-50%);text-align:center;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+.member svg.fig{width:100%;height:auto;overflow:visible;display:block}
+.member .name{font-size:12.5px;font-weight:650;margin-top:-4px;white-space:nowrap}
+.member .trustlbl{font-size:11px;color:var(--ink-2);white-space:nowrap}
+.member.addressed .name{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:3px}
+.member .pose{transition:transform .7s cubic-bezier(.3,.7,.3,1);transform-box:fill-box;transform-origin:50% 80%}
+.member .breath{animation:breathe 4s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
+@keyframes breathe{50%{transform:scaleY(1.025)}}
+.member .body{transition:filter .6s}
+.member .pupil{transition:transform .5s}
+.member .lid{transition:opacity .4s}
+.member .arms{transition:opacity .5s}
+.member .mouthTalk{display:none;transform-box:fill-box;transform-origin:center}
+.member.speaking .mouthTalk{display:block;animation:talk .22s ease-in-out infinite alternate}
+.member.speaking .mouthIdle{display:none}
+@keyframes talk{from{transform:scaleY(.25)}to{transform:scaleY(1)}}
+.member.speaking .halo{opacity:1;animation:pulse 1.2s ease-out infinite}
+.member .halo{opacity:0;transform-box:fill-box;transform-origin:center}
+@keyframes pulse{from{transform:scale(.92);opacity:.7}to{transform:scale(1.12);opacity:0}}
+.member .trustArc{transition:stroke-dasharray .8s,stroke .8s}
+.bubble{position:absolute;left:50%;transform:translateX(-50%);max-width:210%;width:max-content;font-size:12.5px;line-height:1.35;padding:7px 10px;border-radius:12px;box-shadow:var(--shadow);text-align:left;pointer-events:none;opacity:0;transition:opacity .35s;z-index:5}
+.bubble.show{opacity:1}
+.member.speaking,.member:has(.bubble.show){z-index:6}
+.say{background:var(--bubble);bottom:100%;margin-bottom:2px}
+.think{background:var(--thought);color:var(--thought-ink);font-style:italic;bottom:100%;margin-bottom:2px;border:1px dashed color-mix(in srgb,var(--thought-ink) 40%,transparent)}
+.think::before{content:"💭 ";font-style:normal}
+.member.top .say,.member.top .think{bottom:auto;top:100%;margin-top:4px;margin-bottom:0}
+.typing{position:absolute;left:50%;top:-14px;transform:translateX(-50%);background:var(--accent);color:var(--accent-ink);padding:3px 11px;border-radius:12px;font-size:18px;line-height:1;letter-spacing:3px;box-shadow:var(--shadow);z-index:7}
+.typing span{animation:blink 1s infinite}.typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+@keyframes blink{50%{opacity:.2}}
+.you{position:absolute;left:50%;top:92%;transform:translate(-50%,-50%);text-align:center;font-size:12px;color:var(--ink-2)}
+.you .seat{width:46px;height:46px;border-radius:50%;margin:0 auto 2px;background:var(--surface);border:2px solid var(--accent);display:grid;place-items:center;font-weight:700;color:var(--accent)}
+#riskBanner{position:absolute;left:10px;right:10px;top:10px;z-index:8;background:var(--bad);color:#fff;border-radius:10px;padding:8px 12px;font-size:13px}
+#pausedOverlay{position:absolute;inset:0;z-index:9;background:color-mix(in srgb,var(--bg) 85%,transparent);display:grid;place-items:center;text-align:center;padding:20px}
+
+/* ---------- input ---------- */
+.composer{padding:10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.composer .row{display:flex;gap:8px;align-items:flex-end}
+#input{flex:1;resize:none;min-height:44px;max-height:140px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12.5px;color:var(--ink-2)}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--chip);color:var(--ink);border-radius:999px;padding:2px 9px;font-size:12px;border:0}
+.chip.skill{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.chip.neg{background:color-mix(in srgb,var(--bad) 16%,transparent)}
+#micBtn.rec{background:var(--bad);color:#fff;border-color:var(--bad)}
+.hint{color:var(--ink-2);font-size:12.5px}
+
+/* ---------- side panel ---------- */
+.side{display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 90px);position:sticky;top:70px}
+@media (max-width:900px){.side{max-height:none;position:static}}
+.tabs{display:flex;border-bottom:1px solid var(--line)}
+.tabs button{flex:1;background:none;border:0;padding:10px;font-weight:600;color:var(--ink-2);border-bottom:2px solid transparent}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.panel{overflow:auto;padding:12px;flex:1;min-height:240px}
+.line{margin:0 0 10px}
+.line .who{font-weight:650;font-size:13px}
+.line .txt{white-space:pre-wrap}
+.line .pt{font-size:12.5px;font-style:italic;color:var(--thought-ink);background:var(--thought);border-radius:8px;padding:4px 8px;margin-top:3px}
+.line.fac .who{color:var(--accent)}
+.line.sys{font-size:12.5px;color:var(--ink-2);font-style:italic}
+.dec{border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-bottom:10px;background:var(--surface-2);font-size:13px}
+.dec h4{margin:0 0 4px;font-size:12.5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.dec .k{color:var(--ink-2);font-size:12px}
+.dec p{margin:4px 0}
+.dec .trust{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.dd{font-weight:650}.dd.up{color:var(--good)}.dd.down{color:var(--bad)}
+.empty{color:var(--ink-2);font-size:13px;text-align:center;padding:20px 8px}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--ink-2);margin:8px 4px 0}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:4px}
+
+/* ---------- modals ---------- */
+.modal{position:fixed;inset:0;background:rgba(10,12,16,.55);display:grid;place-items:center;z-index:50;padding:16px}
+.modal .box{background:var(--surface);color:var(--ink);border-radius:16px;max-width:760px;width:100%;max-height:calc(100vh - 32px);overflow:auto;padding:20px 22px;box-shadow:var(--shadow)}
+.modal h2{margin:0 0 6px;font-size:20px}
+.modal h3{margin:16px 0 6px;font-size:15px}
+.cast{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.cast .c{border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;display:flex;gap:8px}
+.cast .sw{width:14px;height:14px;border-radius:50%;flex:none;margin-top:3px}
+.note{background:color-mix(in srgb,var(--warn) 14%,transparent);border-radius:10px;padding:9px 12px;font-size:13px}
+.field{margin:10px 0}
+.field label{display:block;font-weight:600;font-size:13px;margin-bottom:3px}
+.field input,.field select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
+.field .hint{margin-top:3px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:16px}
+.radio{display:flex;gap:10px;flex-wrap:wrap}
+.radio label{flex:1;min-width:220px;border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;gap:8px;cursor:pointer;font-size:13px}
+.radio input{margin-top:3px}
+.bars{display:flex;flex-direction:column;gap:5px}
+.bar{display:grid;grid-template-columns:150px 1fr 28px;gap:8px;align-items:center;font-size:13px}
+.bar .track{height:8px;border-radius:4px;background:var(--chip);overflow:hidden}
+.bar .fill{height:100%;background:var(--accent)}
+.bar .fill.neg{background:var(--bad)}
+.tt{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.tt .t{border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px}
+.moment{border-left:3px solid var(--good);padding:4px 10px;margin:6px 0;font-size:13.5px}
+.moment.grow{border-left-color:var(--warn)}
+.moment a{color:var(--accent);cursor:pointer;font-size:12px}
+.flash{animation:flash 1.6s}
+@keyframes flash{0%,40%{background:color-mix(in srgb,var(--accent) 22%,transparent)}}
+@media (max-width:560px){
+  header{padding:8px 12px} main{padding:10px 12px;gap:10px}
+  #stage{aspect-ratio:1/1} .member{width:20%;min-width:0} .member .name{font-size:11px} .member .trustlbl{font-size:10px}
+  header .sub{display:none} .tbtn{padding:4px 8px;font-size:12px}
+  .bubble{font-size:11px;max-width:170%} .bar{grid-template-columns:110px 1fr 24px}
+}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Group Circle Simulator</h1>
+    <div class="sub">Practise running a counselling group. Stage 1 prototype.</div>
+  </div>
+  <div class="spacer"></div>
+  <span class="pill"><span class="dot" id="statusDot"></span><span id="statusText">Not started</span></span>
+  <button class="tbtn" id="xrayBtn" aria-pressed="false" title="Show each member's private thoughts">X-ray thoughts</button>
+  <button class="tbtn" id="linesBtn" aria-pressed="true" title="Show tension and connection lines between members">Relationship lines</button>
+  <button class="tbtn" id="voiceBtn" aria-pressed="false" title="Read members' lines aloud">Voice</button>
+  <button class="tbtn" id="pauseBtn" title="Pause the session">Pause</button>
+  <button class="tbtn" id="settingsBtn">Settings</button>
+  <button class="btn danger" id="endBtn" disabled>End &amp; debrief</button>
+</header>
+
+<main>
+  <section class="card">
+    <div class="stage-wrap">
+      <div class="stage-top">
+        <span class="stage-badge">Group stage: <b id="stageName">forming</b></span>
+        <span class="stage-badge">Turn <b id="turnNo">0</b></span>
+        <span class="stage-badge" id="modeBadge">Mode: -</span>
+      </div>
+      <div id="stage">
+        <div class="rug"></div>
+        <svg id="lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <div class="you"><div class="seat">You</div>Facilitator</div>
+        <div id="activity" class="hidden" role="status" aria-live="polite"><div class="spinner"></div><div><div class="txt"></div><div class="el"></div><div class="prog"></div><div class="extra"></div></div></div>
+        <div id="riskBanner" class="hidden"></div>
+        <div id="pausedOverlay" class="hidden"><div><h3 style="margin:0 0 6px">Session paused</h3><p class="hint" style="margin:0 0 12px">Take the time you need. Nothing happens in the group while paused.</p><button class="btn" id="resumeBtn">Resume</button></div></div>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--good)"></i>connection</span>
+        <span><i style="background:var(--bad)"></i>tension</span>
+        <span>Ring around a member = trust in the group (0–10)</span>
+        <span>Click a member to address them</span>
+      </div>
+    </div>
+    <div class="composer">
+      <div class="chips" id="addrRow">
+        <span>Addressing:</span><span class="chip" id="addrChip">the whole group</span>
+        <button class="chip hidden" id="addrClear" title="Address the whole group">✕ clear</button>
+      </div>
+      <div class="row">
+        <textarea id="input" rows="2" placeholder="Speak to the group, e.g. “Welcome back, everyone. How has this week been?”" disabled></textarea>
+        <button class="tbtn hidden" id="micBtn" title="Speak instead of typing" disabled>🎤</button>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button class="btn" id="sendBtn" disabled>Say</button>
+          <button class="tbtn" id="silentBtn" title="Hold the silence and let the group respond" disabled>Stay silent</button>
+        </div>
+      </div>
+      <div class="hint" id="composerHint">Press Enter to send and Shift+Enter for a new line.</div>
+    </div>
+  </section>
+
+  <aside class="card side">
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="transcript">Transcript</button>
+      <button role="tab" aria-selected="false" data-tab="decisions">AI decisions</button>
+    </div>
+    <div class="panel" id="transcriptPanel"><div class="empty">The session hasn't started yet.</div></div>
+    <div class="panel hidden" id="decisionsPanel"><div class="empty">Every choice the director and members make is logged here with its reasoning.</div></div>
+  </aside>
+</main>
+
+<!-- Start modal -->
+<div class="modal" id="startModal">
+  <div class="box">
+    <h2>“Coping with University Pressure”, session 3 of 8</h2>
+    <p style="margin:0 0 10px">You are facilitating a support group at a university counselling centre. Five students are in the circle, and each has a private story they only share if the group feels safe. AI agents play each member, a <b>director</b> agent decides who speaks and how the group develops, and an <b>observer</b> gives you a debrief at the end.</p>
+    <h3>The group</h3>
+    <div class="cast" id="castList"></div>
+    <h3>How to run the AI</h3>
+    <div class="radio">
+      <label><input type="radio" name="mode" value="llm" checked><span><b>My model servers</b><br><span class="hint">Uses the Lemonade endpoints in Settings. The page must be open on a device that can reach them (e.g. on your Tailscale network).</span></span></label>
+      <label><input type="radio" name="mode" value="demo"><span><b>Demo mode (no AI)</b><br><span class="hint">A scripted stand-in for the agents, using simple rules. Use it to try the interface offline.</span></span></label>
+    </div>
+    <p class="note" style="margin-top:12px"><b>Content note.</b> The members talk about loneliness, grief, family pressure and academic failure. This is a training simulation with fictional people: it is not counselling and must not be used with real clients. You can pause at any time.</p>
+    <div class="actions">
+      <button class="btn secondary" id="startSettingsBtn">Settings</button>
+      <button class="btn" id="startBtn">Start session</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="modal hidden" id="settingsModal">
+  <div class="box">
+    <h2>Settings</h2>
+    <p class="hint" style="margin:0">OpenAI-compatible chat completions endpoints, for example your Lemonade servers.</p>
+    <h3>Group members (they speak most often)</h3>
+    <div class="field"><label for="memberEndpoint">Chat completions URL</label><input id="memberEndpoint" type="text"></div>
+    <div class="field"><label for="memberModel">Model</label><input id="memberModel" type="text"></div>
+    <h3>Director and observer (they make the decisions)</h3>
+    <div class="field"><label for="directorEndpoint">Chat completions URL</label><input id="directorEndpoint" type="text"><div class="hint">Leave this empty to use the members' server.</div></div>
+    <div class="field"><label for="directorModel">Model</label><input id="directorModel" type="text"><div class="hint">Use a non-thinking instruct model. The director replies with JSON, and thinking models tend to use up their token budget before they answer.</div></div>
+    <div class="hint" id="testResult"></div>
+    <div class="actions">
+      <button class="btn secondary" id="testBtn">Test connection</button>
+      <button class="btn secondary" id="resetBtn">Reset to defaults</button>
+      <button class="btn" id="saveBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Debrief modal -->
+<div class="modal hidden" id="debriefModal">
+  <div class="box" id="debriefBox"></div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   CONFIG
+   ============================================================ */
+const APP_VERSION = "v1.2";
+const DEFAULTS = {
+  memberEndpoint: "https://lsctdscoma003.tailfeee99.ts.net/v1/chat/completions",
+  memberModel: "qwen2.5-14b-instruct",
+  directorEndpoint: "https://lsctdscoma002.tailfeee99.ts.net/v1/chat/completions",
+  directorModel: "qwen/qwen3-4b-2507",
+};
+function store(k, v) { try { if (v === undefined) return localStorage.getItem("groupsim_" + k); localStorage.setItem("groupsim_" + k, v); } catch (e) { return null; } }
+const config = {};
+for (const k of Object.keys(DEFAULTS)) { const v = store(k); config[k] = v !== null && v !== undefined ? v : DEFAULTS[k]; }
+
+/* ============================================================
+   THE GROUP
+   Public info is shown to the trainee; hidden info only goes to the
+   member's own agent (and is revealed in the debrief).
+   ============================================================ */
+const GROUP = {
+  title: "Coping with University Pressure",
+  setting: "A closed support group of five university students at a Malaysian university counselling centre. Session 3 of 8, 60 minutes. Group norms agreed in session 1: confidentiality, speak for yourself, you may pass.",
+};
+const MEMBERS = [
+  { id:"ravi", name:"Ravi", role:"Dominates the talk", color:"#e8925a", trust:5,
+    pub:"Second-year engineering student who works part-time at his uncle's restaurant.",
+    hidden:"Works 30 hours a week to pay his younger sister's tuition. Talks a lot and jokes so that nobody asks how he really is. Afraid that if he stops, he will break down.",
+    style:"Talkative and fast, makes jokes, goes off on long tangents, and jumps in when others pause. Uses light Malaysian English ('lah', 'can').",
+    opens:"the facilitator gently names the feeling under the jokes, or kindly holds him back and later returns to him",
+    shuts:"he is cut off abruptly, mocked, or ignored after being blocked",
+    voice:{pitch:.9, rate:1.12} },
+  { id:"meiling", name:"Mei Ling", role:"Silent member", color:"#8fb7e0", trust:3,
+    pub:"First-year accounting student from Sabah, living away from home for the first time.",
+    hidden:"Very homesick and lonely, and has made no friends this semester. Worries she is a burden. Speaks only when invited warmly and given space, and says very little at first.",
+    style:"Very short, quiet answers. Hesitant. Says sorry often.",
+    opens:"she is invited by name gently, given time, and protected from interruptions",
+    shuts:"she is put on the spot sharply, interrupted, or talked over by Ravi",
+    voice:{pitch:1.3, rate:.9} },
+  { id:"daniel", name:"Daniel", role:"Sceptic", color:"#9a8fd0", trust:3,
+    pub:"Final-year law student. He attends because his scholarship requires it.",
+    hidden:"Under heavy pressure to get a training contract. Failed an important interview last month and told nobody. Challenges the group so he does not have to be vulnerable.",
+    style:"Articulate, dry and a little sarcastic. Questions the point of the group.",
+    opens:"the facilitator responds to his challenge without getting defensive and accepts that it is his choice how much to share",
+    shuts:"the facilitator gets defensive, argues, lectures, or pushes him to share",
+    voice:{pitch:.75, rate:1.0} },
+  { id:"aisyah", name:"Aisyah", role:"Rescuer", color:"#e3a3c0", trust:6,
+    pub:"Third-year psychology student and the eldest of five siblings.",
+    hidden:"Looks after everyone so she does not have to face her own anxiety. Her parents expect her to become a doctor, which she does not want. Rushes to comfort or advise when others show pain.",
+    style:"Warm, quick to reassure, offers practical advice to others, and turns attention away from herself.",
+    opens:"the facilitator kindly notices her pattern and turns attention to her own needs",
+    shuts:"she is criticised for helping",
+    voice:{pitch:1.15, rate:1.06} },
+  { id:"farah", name:"Farah", role:"Grieving", color:"#86c4a5", trust:4,
+    pub:"Second-year business student.",
+    hidden:"Her grandmother, who raised her, died last semester. She is failing two subjects and has not told her family. Tearful and apologises for being emotional.",
+    style:"Soft-spoken, pauses, apologises, sometimes trails off.",
+    opens:"her feelings are reflected accurately and the group stays calm and does not rush to fix things",
+    shuts:"someone rushes to fix it, gives advice, or changes the subject",
+    voice:{pitch:1.05, rate:.92} },
+];
+const BYID = Object.fromEntries(MEMBERS.map(m => [m.id, m]));
+const INITIAL_REL = { "daniel|ravi": -1, "aisyah|farah": 1, "aisyah|daniel": -1 };
+const EMOTIONS = ["calm","anxious","defensive","sad","hopeful","irritated","withdrawn","warm","amused","guarded"];
+const EMO_COLOR = { calm:"#7fb3c8", anxious:"#e3c25a", defensive:"#e07b56", sad:"#6d8fd6", hopeful:"#7fcf8e", irritated:"#d9534f", withdrawn:"#9aa0a8", warm:"#f0a07a", amused:"#f2c94c", guarded:"#b08a6e" };
+const POSTURES = ["open","leaning_in","arms_crossed","turned_away","looking_down"];
+const SKILLS = {
+  open_question:"Open question", reflection:"Reflection of feeling", summarising:"Summarising", linking:"Linking members",
+  blocking:"Blocking (kindly)", drawing_out:"Drawing out", protecting:"Protecting", acknowledging:"Acknowledging a challenge",
+  immediacy:"Immediacy (here and now)", holding_silence:"Holding silence", closed_question:"Closed question",
+  giving_advice:"Giving advice", cutting_off:"Cutting off abruptly", defensive:"Defensive response", other:"Other",
+};
+const NEG_SKILLS = new Set(["closed_question","giving_advice","cutting_off","defensive"]);
+
+/* ============================================================
+   STATE
+   ============================================================ */
+const S = {
+  mode: "llm", started: false, busy: false, paused: false, ended: false,
+  turn: 0, stage: "forming", addressed: null,
+  transcript: [], // {turn, who:'facilitator'|id|'system', text, thought?, skills?}
+  decisions: [],  // director decisions
+  members: {},    // id -> {trust, emotion, posture, gaze, turns, thought, startTrust}
+  rel: {},        // "a|b" sorted -> -3..3
+  flags: { challengeDone:false, rescueDone:false, lastBlockTurn:-9 },
+  xray:false, lines:true, voice:false,
+};
+function resetState() {
+  S.turn = 0; S.stage = "forming"; S.addressed = null; S.transcript = []; S.decisions = []; S.ended = false;
+  S.flags = { challengeDone:false, rescueDone:false, lastBlockTurn:-9 };
+  for (const m of MEMBERS) S.members[m.id] = { trust:m.trust, startTrust:m.trust, emotion: m.trust <= 3 ? "guarded" : "calm", posture: m.trust <= 3 ? "arms_crossed" : "open", gaze:"facilitator", turns:0, thought:"" };
+  S.rel = {};
+  for (let i = 0; i < MEMBERS.length; i++) for (let j = i + 1; j < MEMBERS.length; j++) {
+    const k = relKey(MEMBERS[i].id, MEMBERS[j].id); S.rel[k] = INITIAL_REL[k] || 0;
+  }
+}
+function relKey(a, b) { return [a, b].sort().join("|"); }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/* ============================================================
+   STAGE RENDERING
+   ============================================================ */
+const stageEl = document.getElementById("stage");
+const POS = {}; // id -> {x,y} in % of stage
+MEMBERS.forEach((m, i) => {
+  const a = (90 + 60 * (i + 1)) * Math.PI / 180;
+  POS[m.id] = { x: 50 + 36 * Math.cos(a), y: 52 + 33 * Math.sin(a) };
+});
+POS.facilitator = { x:50, y:88 };
+const CENTER = { x:50, y:52 };
+
+function figureSVG(m) {
+  return `
+  <svg class="fig" viewBox="0 0 120 120" aria-hidden="true">
+    <circle class="halo" cx="60" cy="64" r="48" fill="none" stroke="${m.color}" stroke-width="3"/>
+    <circle cx="60" cy="64" r="53" fill="none" stroke="var(--line)" stroke-width="4"/>
+    <circle class="trustArc" cx="60" cy="64" r="53" fill="none" stroke-width="4" stroke-linecap="round" transform="rotate(-90 60 64)" pathLength="100" stroke-dasharray="0 100"/>
+    <g class="pose"><g class="breath">
+      <path class="body" d="M60 20 C86 20 100 40 100 64 C100 92 84 106 60 106 C36 106 20 92 20 64 C20 40 34 20 60 20Z" fill="${m.color}"/>
+      <ellipse cx="60" cy="40" rx="24" ry="10" fill="#fff" opacity=".18"/>
+      <path class="brows" d="" stroke="#2a2a2a" stroke-width="2.6" stroke-linecap="round" fill="none"/>
+      <g><circle cx="47" cy="58" r="7.5" fill="#fff"/><circle class="pupil" cx="47" cy="58" r="3.4" fill="#2a2a2a"/>
+         <circle cx="73" cy="58" r="7.5" fill="#fff"/><circle class="pupil" cx="73" cy="58" r="3.4" fill="#2a2a2a"/>
+         <path class="lid" d="M39 57 A8 8 0 0 1 55 57 Z M65 57 A8 8 0 0 1 81 57 Z" fill="${m.color}" opacity="0"/></g>
+      <path class="mouthIdle" d="" stroke="#2a2a2a" stroke-width="2.6" stroke-linecap="round" fill="none"/>
+      <ellipse class="mouthTalk" cx="60" cy="78" rx="6" ry="5" fill="#2a2a2a"/>
+      <path class="arms" d="M26 86 Q60 104 94 86 L94 94 Q60 112 26 94 Z" fill="${m.color}" stroke="rgba(0,0,0,.25)" stroke-width="1.5" opacity="0"/>
+    </g></g>
+  </svg>`;
+}
+function buildStage() {
+  for (const m of MEMBERS) {
+    const el = document.createElement("div");
+    el.className = "member" + (POS[m.id].y < 40 ? " top" : "");
+    el.id = "m-" + m.id; el.style.left = POS[m.id].x + "%"; el.style.top = POS[m.id].y + "%";
+    el.setAttribute("role", "button"); el.setAttribute("tabindex", "0");
+    el.setAttribute("aria-label", "Address " + m.name);
+    el.innerHTML = `<div class="bubble think"></div><div class="bubble say"></div>${figureSVG(m)}<div class="name">${m.name}</div><div class="trustlbl"></div>`;
+    el.addEventListener("click", () => setAddressed(S.addressed === m.id ? null : m.id));
+    el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } });
+    stageEl.appendChild(el);
+  }
+}
+const MOUTH = {
+  warm:"M49 75 Q60 85 71 75", hopeful:"M49 75 Q60 84 71 75", amused:"M48 74 Q60 87 72 74",
+  sad:"M50 80 Q60 72 70 80", anxious:"M48 77 Q54 73 60 77 Q66 81 72 77",
+  defensive:"M50 78 L70 76", irritated:"M50 79 Q60 74 70 79", withdrawn:"M55 78 L65 78",
+  guarded:"M53 78 L67 78", calm:"M51 76 Q60 80 69 76",
+};
+const BROWS = {
+  sad:"M40 48 L52 45 M68 45 L80 48", anxious:"M40 46 Q47 42 53 45 M67 45 Q73 42 80 46",
+  irritated:"M40 44 L53 49 M67 49 L80 44", defensive:"M41 46 L53 48 M67 48 L79 46",
+  guarded:"M41 47 L53 47 M67 47 L79 47", withdrawn:"M41 48 L52 47 M68 47 L79 48",
+};
+function trustColor(t) { return t >= 7 ? "var(--good)" : t >= 4 ? "var(--warn)" : "var(--bad)"; }
+function renderMember(id) {
+  const m = BYID[id], st = S.members[id], el = document.getElementById("m-" + id);
+  el.querySelector(".mouthIdle").setAttribute("d", MOUTH[st.emotion] || MOUTH.calm);
+  el.querySelector(".brows").setAttribute("d", BROWS[st.emotion] || "");
+  el.querySelector(".body").style.filter = `drop-shadow(0 0 7px ${EMO_COLOR[st.emotion] || "transparent"})`;
+  const arc = el.querySelector(".trustArc");
+  arc.setAttribute("stroke-dasharray", `${st.trust * 10} 100`); arc.style.stroke = trustColor(st.trust);
+  el.querySelector(".trustlbl").textContent = `trust ${st.trust}/10 · ${st.emotion}`;
+  // gaze
+  let dx = 0, dy = 0;
+  const gp = st.posture === "looking_down" ? null : POS[st.gaze] || (st.gaze === "floor" ? null : POS.facilitator);
+  if (gp) {
+    const vx = (gp.x - POS[id].x) * 4, vy = (gp.y - POS[id].y) * 3, len = Math.hypot(vx, vy) || 1;
+    dx = vx / len * 3; dy = vy / len * 3;
+  } else { dy = 3.4; }
+  el.querySelectorAll(".pupil").forEach(p => p.style.transform = `translate(${dx.toFixed(2)}px,${dy.toFixed(2)}px)`);
+  el.querySelector(".lid").style.opacity = st.posture === "looking_down" || st.emotion === "withdrawn" ? 1 : 0;
+  el.querySelector(".arms").style.opacity = st.posture === "arms_crossed" ? 1 : 0;
+  // posture
+  const cx = (CENTER.x - POS[id].x), cy = (CENTER.y - POS[id].y), cl = Math.hypot(cx, cy) || 1;
+  let t = "";
+  if (st.posture === "leaning_in") t = `translate(${(cx / cl * 9).toFixed(1)}px,${(cy / cl * 9).toFixed(1)}px) scale(1.05)`;
+  else if (st.posture === "turned_away") t = `rotate(${POS[id].x < 50 ? -14 : 14}deg) translate(${POS[id].x < 50 ? -4 : 4}px,0)`;
+  else if (st.posture === "looking_down") t = "translateY(5px) scale(.97)";
+  else if (st.posture === "arms_crossed") t = "scale(.97)";
+  el.querySelector(".pose").style.transform = t;
+  el.classList.toggle("addressed", S.addressed === id);
+  // thought bubble
+  const tb = el.querySelector(".think");
+  tb.textContent = st.thought || "";
+  tb.classList.toggle("show", S.xray && !!st.thought && !el.classList.contains("speaking"));
+}
+function renderLines() {
+  const svg = document.getElementById("lines");
+  let out = "";
+  if (S.lines) for (const [k, v] of Object.entries(S.rel)) {
+    if (!v) continue;
+    const [a, b] = k.split("|"), pa = POS[a], pb = POS[b];
+    const col = v > 0 ? "var(--good)" : "var(--bad)";
+    out += `<line x1="${pa.x}" y1="${pa.y}" x2="${pb.x}" y2="${pb.y}" stroke="${col}" stroke-width="${1 + Math.abs(v) * 1.6}" stroke-dasharray="${v < 0 ? "6 5" : ""}" opacity="${.35 + Math.abs(v) * .18}" stroke-linecap="round"/>`;
+  }
+  svg.innerHTML = out;
+}
+function renderAll() {
+  MEMBERS.forEach(m => renderMember(m.id));
+  renderLines();
+  document.getElementById("stageName").textContent = S.stage;
+  document.getElementById("turnNo").textContent = S.turn;
+}
+function setTyping(id, on) {
+  const el = document.getElementById("m-" + id);
+  let t = el.querySelector(".typing");
+  if (on && !t) { t = document.createElement("div"); t.className = "typing"; t.innerHTML = "<span>•</span><span>•</span><span>•</span>"; el.appendChild(t); }
+  if (!on && t) t.remove();
+}
+
+/* ============================================================
+   TRANSCRIPT & DECISIONS PANELS
+   ============================================================ */
+const tPanel = document.getElementById("transcriptPanel"), dPanel = document.getElementById("decisionsPanel");
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c])); }
+function addLine(entry) {
+  S.transcript.push(entry);
+  if (tPanel.querySelector(".empty")) tPanel.innerHTML = "";
+  const d = document.createElement("div");
+  d.id = "line-" + (S.transcript.length - 1);
+  if (entry.who === "system") { d.className = "line sys"; d.textContent = entry.text; }
+  else if (entry.who === "warn") { d.className = "line warn"; d.textContent = entry.text; }
+  else if (entry.who === "facilitator") {
+    d.className = "line fac";
+    d.innerHTML = `<div class="who">You (facilitator)${entry.to ? " → " + esc(BYID[entry.to].name) : ""}</div><div class="txt">${esc(entry.text)}</div>`;
+  } else {
+    const m = BYID[entry.who];
+    d.className = "line";
+    d.innerHTML = `<div class="who" style="color:${m.color}">${esc(m.name)}</div><div class="txt">${esc(entry.text)}</div>` +
+      (entry.thought ? `<div class="pt ${S.xray ? "" : "hidden"}">💭 ${esc(entry.thought)}</div>` : "");
+  }
+  tPanel.appendChild(d); tPanel.scrollTop = tPanel.scrollHeight;
+}
+function addDecision(dec) {
+  S.decisions.push(dec);
+  if (dPanel.querySelector(".empty")) dPanel.innerHTML = "";
+  const d = document.createElement("div");
+  d.className = "dec";
+  const skills = (dec.skills || []).map(s => `<span class="chip ${NEG_SKILLS.has(s) ? "neg" : "skill"}">${esc(SKILLS[s] || s)}</span>`).join(" ");
+  const speakers = (dec.speakers || []).map(s => `<b>${esc(BYID[s.id]?.name || s.id)}</b>: <span class="k">${esc(s.instruction || "")}</span>`).join("<br>");
+  const trust = (dec.trustChanges || []).map(c => `<span class="chip">${esc(BYID[c.id].name)} <span class="dd ${c.delta > 0 ? "up" : "down"}">${c.delta > 0 ? "+" : ""}${c.delta}</span>${c.why ? ` <span class="k">${esc(c.why)}</span>` : ""}</span>`).join("");
+  d.innerHTML = `
+    <h4>Turn ${dec.turn} <span class="chip">stage: ${esc(dec.stage)}</span>${dec.directorSecs ? ` <span class="k">decided in ${dec.directorSecs}s</span>` : ""}${dec.source === "fallback" ? ' <span class="chip neg">scripted fallback</span>' : ""}</h4>
+    ${skills ? `<div class="k">Your move:</div><div>${skills}</div>` : ""}
+    ${dec.skillNote ? `<p>${esc(dec.skillNote)}</p>` : ""}
+    ${dec.event ? `<p><span class="k">Event introduced:</span> ${esc(dec.event)}</p>` : ""}
+    <p><span class="k">Director chose:</span><br>${speakers || "<i>no one speaks</i>"}</p>
+    ${dec.reasoning ? `<p><span class="k">Why:</span> ${esc(dec.reasoning)}</p>` : ""}
+    ${trust ? `<div class="k">Trust changes:</div><div class="trust">${trust}</div>` : ""}`;
+  dec.el = d;
+  dPanel.appendChild(d); dPanel.scrollTop = dPanel.scrollHeight;
+}
+function appendTrustToDecision(dec, c) {
+  dec.trustChanges = dec.trustChanges || [];
+  dec.trustChanges.push(c);
+  if (!dec.el) return;
+  let box = dec.el.querySelector(".trust");
+  if (!box) { dec.el.insertAdjacentHTML("beforeend", `<div class="k">Trust changes:</div><div class="trust"></div>`); box = dec.el.querySelector(".trust"); }
+  box.insertAdjacentHTML("beforeend", `<span class="chip">${esc(BYID[c.id].name)} <span class="dd ${c.delta > 0 ? "up" : "down"}">${c.delta > 0 ? "+" : ""}${c.delta}</span>${c.why ? ` <span class="k">${esc(c.why)}</span>` : ""}</span>`);
+}
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b));
+  tPanel.classList.toggle("hidden", b.dataset.tab !== "transcript");
+  dPanel.classList.toggle("hidden", b.dataset.tab !== "decisions");
+}));
+
+/* ============================================================
+   LLM CALLS
+   ============================================================ */
+function setStatus(state, text) {
+  const dot = document.getElementById("statusDot");
+  dot.classList.toggle("ok", state === "ok"); dot.classList.toggle("bad", state === "bad");
+  document.getElementById("statusText").textContent = text;
+}
+/* Streams the reply (stream:true) so the page can show progress and use
+   idle timeouts instead of one fixed limit: up to FIRST_TOKEN_MS for the
+   model to start (a cold model may still be loading, and a long prompt has
+   to be read first), then IDLE_MS between chunks. Falls back to a normal
+   JSON body if the server ignores stream. */
+const FIRST_TOKEN_MS = 120000, IDLE_MS = 30000;
+async function callLLMOnce(endpoint, model, messages, { temperature, max_tokens, onProgress }) {
+  const controller = new AbortController();
+  let timer, gotFirst = false;
+  const arm = ms => { clearTimeout(timer); timer = setTimeout(() => controller.abort(), ms); };
+  const t0 = performance.now();
+  arm(FIRST_TOKEN_MS);
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages, temperature, max_tokens, stream: true }), signal: controller.signal,
+    });
+    if (!res.ok) {
+      let detail = ""; try { detail = (await res.text()).replace(/\s+/g, " ").slice(0, 160); } catch (e) {}
+      throw new Error("Server responded " + res.status + (detail ? ": " + detail : ""));
+    }
+    const ct = res.headers.get("content-type") || "";
+    let content = "", firstMs = null;
+    if (!res.body || !/event-stream/i.test(ct)) {
+      const data = await res.json();
+      content = data?.choices?.[0]?.message?.content;
+      if (typeof content !== "string") throw new Error("Unexpected response shape");
+      firstMs = performance.now() - t0;
+    } else {
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      let buf = "", done = false;
+      while (!done) {
+        const r = await reader.read();
+        if (r.done) break;
+        buf += dec.decode(r.value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
+          if (payload === "[DONE]") { done = true; break; }
+          let j; try { j = JSON.parse(payload); } catch (e) { continue; }
+          if (j.error) throw new Error("Server error: " + (j.error.message || JSON.stringify(j.error)).slice(0, 160));
+          const piece = j?.choices?.[0]?.delta?.content ?? j?.choices?.[0]?.message?.content ?? "";
+          if (piece) {
+            if (!gotFirst) { gotFirst = true; firstMs = performance.now() - t0; }
+            content += piece;
+            onProgress && onProgress({ chars: content.length, firstMs });
+          }
+        }
+        arm(gotFirst ? IDLE_MS : FIRST_TOKEN_MS);
+      }
+    }
+    return { content, firstMs, totalMs: performance.now() - t0 };
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error(gotFirst
+      ? `the model stopped sending part-way through its reply (nothing for ${IDLE_MS / 1000}s)`
+      : `the model didn't start replying within ${FIRST_TOKEN_MS / 1000}s (it may still be loading, or the server is busy)`);
+    throw err;
+  } finally { clearTimeout(timer); }
+}
+async function callLLM(endpoint, model, messages, { temperature = 0.7, max_tokens = 400, onProgress, withTiming = false } = {}) {
+  const delays = [1000, 3000, 6000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const r = await callLLMOnce(endpoint, model, messages, { temperature, max_tokens, onProgress });
+      setStatus("ok", "Connected"); noteActivity("");
+      return withTiming ? r : r.content;
+    } catch (err) {
+      const retriable = err instanceof TypeError || /Server responded (400|5\d\d)/.test(err.message);
+      if (retriable && attempt < delays.length) { setStatus("", "Reconnecting…"); noteActivity(`Server problem (${err.message.slice(0, 80)}). Retrying ${attempt + 1}/${delays.length}…`); await new Promise(r => setTimeout(r, delays[attempt])); continue; }
+      throw err;
+    }
+  }
+}
+function progressReporter() {
+  return ({ chars, firstMs }) => setProgress(`Model started after ${(firstMs / 1000).toFixed(1)}s · receiving reply (${chars} characters)`);
+}
+/* Small models wrap JSON in prose, code fences or <think> blocks, and
+   sometimes leave trailing commas. Pull out the first balanced object. */
+function extractJSON(text) {
+  if (!text) return null;
+  let t = text.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "");
+  const start = t.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0, inStr = false, escNext = false, end = -1;
+  for (let i = start; i < t.length; i++) {
+    const c = t[i];
+    if (inStr) { if (escNext) escNext = false; else if (c === "\\") escNext = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true; else if (c === "{") depth++; else if (c === "}") { depth--; if (depth === 0) { end = i; break; } }
+  }
+  let body = end > 0 ? t.slice(start, end + 1) : t.slice(start);
+  const tries = [body, body.replace(/[“”]/g, '"').replace(/,\s*([}\]])/g, "$1")];
+  for (const b of tries) { try { return JSON.parse(b); } catch (e) {} }
+  return null;
+}
+async function callJSON(endpoint, model, messages, opts) {
+  const first = await callLLM(endpoint, model, messages, opts);
+  let obj = extractJSON(first);
+  if (obj) return obj;
+  const retry = await callLLM(endpoint, model, [...messages, { role:"assistant", content:first }, { role:"user", content:"That was not valid JSON. Reply again with ONLY the JSON object, no other text." }], { ...opts, temperature: 0.2 });
+  obj = extractJSON(retry);
+  if (!obj) throw new Error("model did not return JSON");
+  return obj;
+}
+const directorEndpoint = () => config.directorEndpoint || config.memberEndpoint;
+
+function recentTranscript(n = 14) {
+  return S.transcript.filter(e => e.who !== "system" && e.who !== "warn").slice(-n).map(e =>
+    e.who === "facilitator" ? `Facilitator${e.to ? " (to " + BYID[e.to].name + ")" : ""}: ${e.text}` : `${BYID[e.who].name}: ${e.text}`
+  ).join("\n") || "(nothing said yet)";
+}
+function memberSummary() {
+  return MEMBERS.map(m => {
+    const st = S.members[m.id];
+    return `- ${m.id} (${m.name}, ${m.role}): trust ${st.trust}/10, ${st.emotion}, ${st.posture}, has spoken ${st.turns} times. Opens up when ${m.opens}. Shuts down when ${m.shuts}.`;
+  }).join("\n");
+}
+
+/* ---------- Director ---------- */
+function directorSystemPrompt() {
+  return `You are the DIRECTOR of a training simulation for trainee group counsellors. You do not speak in the group. After each facilitator move you decide what the group does next, so the trainee practises realistic group dynamics.
+
+Group: ${GROUP.title}. ${GROUP.setting}
+
+Members (ids in brackets are the only valid ids):
+${MEMBERS.map(m => `- [${m.id}] ${m.name}, ${m.role}: ${m.pub}`).join("\n")}
+
+Your job each turn:
+1. Classify the facilitator's latest move using these skill labels: ${Object.keys(SKILLS).join(", ")}.
+2. Decide the group stage: forming, storming, norming or working. Move to storming once the group has warmed up (around turn 2 to 4) and let a challenge or conflict surface. Move to norming only after the facilitator has handled conflict well and average trust rises. Move to working when trust is high and members are sharing honestly.
+3. Choose who speaks next. Usually 1 member, sometimes 2 (for example when someone reacts to another member). Choose 0 only if the facilitator asked for silence and the group would really stay quiet.
+   - If the facilitator addressed someone by name, that person usually answers.
+   - Members with low trust rarely volunteer. The dominant member (ravi) jumps in when there is a pause unless he was recently blocked.
+   - The rescuer (aisyah) tends to rush in with advice after someone shows pain.
+   - The sceptic (daniel) challenges the facilitator or the group during storming.
+   - Give each chosen speaker a short private instruction about what to do (react, challenge, deflect, open up a little, and so on). Do not script their words.
+4. Optionally note silent reactions: members who do not speak but whose trust changes because of the facilitator's move (for example, others feel safer when a dominant member is blocked kindly). Use trust_delta -1 or +1.
+
+Reply with ONLY a JSON object, no other text:
+{"skills":["..."],"skill_note":"one sentence of feedback on the facilitator's move","stage":"forming|storming|norming|working","event":"short description of any dynamic you are introducing, or empty string","speakers":[{"id":"memberid","instruction":"..."}],"silent_reactions":[{"id":"memberid","trust_delta":1,"why":"..."}],"reasoning":"one or two sentences on why you chose this"}`;
+}
+async function llmDirector(facText, addressed) {
+  const user = `Turn ${S.turn}. Current stage: ${S.stage}.
+Member state:
+${memberSummary()}
+
+Recent conversation:
+${recentTranscript()}
+
+Facilitator's latest move${addressed ? " (addressed to " + addressed + ")" : ""}: ${facText}`;
+  const obj = await callJSON(directorEndpoint(), config.directorModel,
+    [{ role:"system", content:directorSystemPrompt() }, { role:"user", content:user }], { temperature:0.4, max_tokens:450, onProgress:progressReporter() });
+  return normaliseDecision(obj);
+}
+function normaliseDecision(obj) {
+  const skills = (Array.isArray(obj.skills) ? obj.skills : []).map(s => String(s).toLowerCase().trim().replace(/\s+/g, "_")).filter(s => SKILLS[s]);
+  let speakers = (Array.isArray(obj.speakers) ? obj.speakers : []).map(s => ({ id: String(s.id || s.name || "").toLowerCase().replace(/\s+/g, ""), instruction: String(s.instruction || "") })).filter(s => BYID[s.id]);
+  const seen = new Set(); speakers = speakers.filter(s => !seen.has(s.id) && seen.add(s.id)).slice(0, 2);
+  const silent = (Array.isArray(obj.silent_reactions) ? obj.silent_reactions : []).map(r => ({ id:String(r.id || "").toLowerCase(), delta: clamp(Math.round(+r.trust_delta || 0), -1, 1), why:String(r.why || "") })).filter(r => BYID[r.id] && r.delta && !speakers.some(s => s.id === r.id));
+  const stage = ["forming","storming","norming","working"].includes(obj.stage) ? obj.stage : S.stage;
+  return { skills, skillNote:String(obj.skill_note || ""), stage, event:String(obj.event || ""), speakers, silent, reasoning:String(obj.reasoning || "") };
+}
+
+/* ---------- Members ---------- */
+function memberSystemPrompt(m) {
+  const others = MEMBERS.filter(o => o.id !== m.id).map(o => `${o.id} (${o.name}): ${o.pub}`).join("; ");
+  return `You are role-playing ${m.name}, a fictional member of a counselling support group, in a training simulation for trainee counsellors. Stay fully in character. Never mention that you are an AI or that this is a simulation.
+
+Group: ${GROUP.title}. ${GROUP.setting}
+Who you are (public): ${m.pub}
+Your private story (the others do not know it; reveal it only gradually and only if trust is high, 7 or more): ${m.hidden}
+How you talk: ${m.style}
+You open up when ${m.opens}. You shut down when ${m.shuts}.
+Other members: ${others}. The facilitator is the trainee.
+
+Rules:
+- Say 1 to 3 short spoken sentences, like real conversation. No markdown, no stage directions, no name prefix.
+- How much you share depends on your trust (0-10). Low trust: guarded, short, deflecting. Medium: some honesty. High: you may share part of your private story.
+- Do not talk about wanting to harm yourself or about suicide in this version of the simulation.
+- After each turn, honestly judge how the facilitator's handling made you feel and set trust_delta (-2 to +2, usually -1, 0 or +1).
+
+Reply with ONLY a JSON object:
+{"text":"what you say out loud","emotion":"one of ${EMOTIONS.join("|")}","gaze":"facilitator, floor, or a member id","posture":"one of ${POSTURES.join("|")}","trust_delta":0,"private_thought":"one short first-person sentence you are thinking but not saying","feelings":{"memberid":1}}
+"feelings" is optional: for any member you now feel closer to (+1) or more tension with (-1) because of this moment.`;
+}
+async function llmMember(m, instruction) {
+  const st = S.members[m.id];
+  const user = `Your current trust in the group: ${st.trust}/10. Your mood: ${st.emotion}.
+Recent conversation:
+${recentTranscript()}
+
+Director's private note for your next turn (do not repeat it): ${instruction || "respond naturally"}
+Now give your turn as JSON.`;
+  const obj = await callJSON(config.memberEndpoint, config.memberModel,
+    [{ role:"system", content:memberSystemPrompt(m) }, { role:"user", content:user }], { temperature:0.85, max_tokens:300, onProgress:progressReporter() });
+  return normaliseMember(obj, m.id);
+}
+function normaliseMember(obj, id) {
+  let text = String(obj.text || obj.say || "").replace(/\*+/g, "").replace(/^\s*\w+\s*:\s*/, "").trim();
+  if (!text) throw new Error("empty reply");
+  const emotion = EMOTIONS.includes(obj.emotion) ? obj.emotion : S.members[id].emotion;
+  const posture = POSTURES.includes(obj.posture) ? obj.posture : S.members[id].posture;
+  let gaze = String(obj.gaze || "facilitator").toLowerCase().replace(/\s+/g, "");
+  if (!(gaze === "facilitator" || gaze === "floor" || BYID[gaze]) || gaze === id) gaze = "facilitator";
+  const feelings = {};
+  if (obj.feelings && typeof obj.feelings === "object") for (const [k, v] of Object.entries(obj.feelings)) { const kk = k.toLowerCase().replace(/\s+/g, ""); if (BYID[kk] && kk !== id) feelings[kk] = clamp(Math.round(+v || 0), -1, 1); }
+  return { text, emotion, posture, gaze, delta: clamp(Math.round(+obj.trust_delta || 0), -2, 2), thought:String(obj.private_thought || "").trim(), feelings };
+}
+
+/* ============================================================
+   DEMO MODE: rule-based stand-ins for the agents
+   ============================================================ */
+const R = (arr) => arr[Math.floor(Math.random() * arr.length)];
+function detectSkills(text, addressed) {
+  const t = text.toLowerCase(), s = new Set();
+  if (text === "[silence]") { s.add("holding_silence"); return [...s]; }
+  const names = MEMBERS.filter(m => t.includes(m.name.toLowerCase()) || t.includes(m.name.split(" ")[0].toLowerCase()));
+  if (/\b(what|how)\b[^?]*\?|tell (me|us) more|could you (say|tell)|in what way/.test(t)) s.add("open_question");
+  else if (/^(do|did|is|are|was|were|have|has|would|will|can|should)\b[^?]*\?/.test(t.trim())) s.add("closed_question");
+  if (/sounds like|you('re| are) feeling|you feel|i hear|it seems|i'm noticing you|that sounds/.test(t)) s.add("reflection");
+  if (/so far|to sum|summari[sz]|what i'm hearing from (the group|everyone)|a few of you/.test(t)) s.add("summarising");
+  if (names.length >= 2 || /both of you|similar to what|in common|connects? with what/.test(t)) s.add("linking");
+  if (/hold on|let('s| us) pause|i'd like to hear from|come back to you|let me stop you|before we move on/.test(t)) s.add(/come back|thank|appreciate|i'd like to hear/.test(t) ? "blocking" : "cutting_off");
+  if (/haven't heard from|we haven't heard|would you like to share|no pressure|only if you want|take your time/.test(t)) s.add("drawing_out");
+  if (/speak for (yourself|ourselves)|not okay to|i want (this|the group) to (feel )?safe|let'?s not (judge|fix)|give (her|him|them) space/.test(t)) s.add("protecting");
+  if (/fair (point|question)|you don'?t have to|your choice|that'?s okay to feel|i appreciate (your )?honest|you'?re (right|allowed)/.test(t)) s.add("acknowledging");
+  if (/right now|in this room|here,? now|as we sit here|what'?s happening (in|for) (the group|you) right now/.test(t)) s.add("immediacy");
+  if (/you should|you need to|why don'?t you|have you tried|my advice|try to/.test(t)) s.add("giving_advice");
+  if (/the point is|it does work|you just need|that'?s not true|i disagree/.test(t)) s.add("defensive");
+  if (!s.size) s.add("other");
+  return [...s];
+}
+const DEMO_LINES = {
+  ravi: {
+    low:["Haha, okay, okay, I'll keep it short. Everything's fine lah, just tired. Same as everyone, right?","You cut me off last time, so... I'll just listen I guess.","Can we not make it a big thing? I'm good, really."],
+    mid:["Honestly, work's been crazy. Friday night, forty tables, my uncle shouting, and a lab report due at nine. But free nasi lemak, so who's complaining.","I keep telling myself it's only until my sister finishes her diploma. Two more years. That's nothing, right?","Sorry, I'm talking a lot again. It's just easier than sitting in the quiet."],
+    high:["If I stop joking for one second I think I'd just... I don't know. I'm really tired. Not sleepy tired. Tired tired.","Nobody at home asks how I am. They ask if the money's in. That's hard to say out loud.","It actually helps that you didn't let me turn it into a joke."],
+    event:["Oh, that's like me! Last week at the restaurant, right, my uncle made me close up alone and then...","Can I jump in? Because the same thing happened to me, it's crazy."],
+  },
+  meiling: {
+    low:["...I'm okay.","Nothing much to say. Sorry.","It's fine. Someone else can go."],
+    mid:["It's quiet in my room. I call my mum every night but I don't tell her it's hard.","Sometimes I eat in the library so people don't see I'm alone.","I didn't think anyone else felt like this."],
+    high:["I almost didn't come today. It's the first time this week anyone asked me something.","I feel like a burden if I tell people I'm lonely. Saying it here is... less scary.","Farah, when you talked about your grandmother, I thought of my Ah Ma. I miss home so much."],
+  },
+  daniel: {
+    low:["With respect, I'm not sure what talking in a circle achieves. I'm here because the scholarship form says so.","Is this going to be another 'how does that make you feel' session?","I'll pass, thanks."],
+    mid:["Fine. Law is brutal right now. Everyone's applying for the same handful of training contracts.","I suppose it's useful hearing I'm not the only one not sleeping.","I'm not against this. I just don't like being told to share on command."],
+    high:["I failed an interview last month. A big one. I haven't told anyone, not even my parents.","Saying that out loud is less awful than I expected.","I was being difficult earlier. That was easier than admitting I'm scared."],
+    event:["Can I be honest? I don't see what this achieves. We talk, then we go back to exactly the same problems.","No offence, but how is sitting here going to fix anything?"],
+  },
+  aisyah: {
+    low:["I'm fine! Honestly, I'd rather we focus on the others.","Sorry, I was only trying to help.","I'll just listen today."],
+    mid:["I always end up being the one who sorts things out at home. It's just how it is.","My parents want me to do medicine after this. I said yes. I'm not sure I meant it.","Being the eldest, you just... handle things. Nobody asks."],
+    high:["I think I help everyone so I don't have to think about myself. That's a bit uncomfortable to notice.","I don't want to be a doctor. That's the first time I've said it to anyone.","It feels strange to have people listen to me instead of the other way round."],
+    event:["Oh Farah, don't worry, you'll catch up! Maybe talk to your lecturers? I can help you plan a timetable.","You know what helped me? Making a schedule. You should try it!"],
+  },
+  farah: {
+    low:["Sorry. I don't really want to talk about it.","I'm fine. Can someone else go?","It's okay. Really."],
+    mid:["Sorry, I get emotional. My grandmother passed last semester. She raised me.","Everyone says it gets easier. It doesn't feel easier.","I keep opening my notes and just... staring at them."],
+    high:["I'm failing two subjects. My family doesn't know. I feel like I'm letting her down.","When you said it sounds like I'm carrying it alone, that was exactly it.","It helps that nobody here tried to fix it. I just needed to say it."],
+  },
+};
+const DEMO_THOUGHTS = {
+  up:["That actually felt like being heard.","Maybe it's okay to say a bit more.","They're not judging me. I think.","Okay. This feels a little safer."],
+  down:["Nope. Not opening up again.","That stung. I'll keep it to myself.","They're not really listening.","Just get through the hour."],
+  flat:["I'll see where this goes.","Should I say something? Not yet.","Everyone's watching. Keep it light.","I wonder if anyone else feels like this."],
+};
+function demoDirector(text, addressed) {
+  const skills = detectSkills(text, addressed);
+  const t = text.toLowerCase();
+  const named = addressed || (MEMBERS.find(m => t.includes(m.name.toLowerCase()) || t.includes(m.name.split(" ")[0].toLowerCase())) || {}).id || null;
+  const last = [...S.transcript].reverse().find(e => e.who !== "facilitator" && e.who !== "system" && e.who !== "warn");
+  let speakers = [], event = "", reasoning = "", silent = [];
+  // stage
+  const avg = MEMBERS.reduce((a, m) => a + S.members[m.id].trust, 0) / MEMBERS.length;
+  let stage = S.stage;
+  if (S.turn >= 3 && stage === "forming") stage = "storming";
+  if (stage === "storming" && S.flags.challengeDone && avg >= 5.2) stage = "norming";
+  if (stage === "norming" && avg >= 6.6) stage = "working";
+  // facilitator just responded to a challenge
+  if (last && last.who === "daniel" && last.event === "challenge" && skills.includes("holding_silence")) {
+    speakers.push({ id:"daniel", instruction:"The facilitator let your challenge sit in silence. Fill it, a little less sharply." });
+    reasoning = "Holding the silence after a challenge puts the question back to the group; Daniel fills it himself.";
+  } else if (last && last.who === "daniel" && last.event === "challenge") {
+    const good = skills.some(s => ["acknowledging","reflection","open_question","immediacy"].includes(s)) && !skills.includes("defensive");
+    speakers.push({ id:"daniel", instruction: good ? "The facilitator took your challenge well. Soften a little." : "The facilitator got defensive. Dig in." });
+    reasoning = good ? "Daniel's challenge was met without defensiveness, so he gets space to soften." : "The facilitator argued back, so Daniel digs in.";
+    if (good) silent.push({ id:"meiling", delta:1, why:"saw a challenge handled calmly" });
+  } else if (skills.includes("blocking") || skills.includes("cutting_off")) {
+    S.flags.lastBlockTurn = S.turn;
+    const quiet = MEMBERS.filter(m => m.id !== "ravi").sort((a, b) => S.members[a.id].turns - S.members[b.id].turns)[0];
+    speakers.push({ id: named && named !== "ravi" ? named : quiet.id, instruction:"Space opened up after Ravi was held back. Take it, carefully." });
+    reasoning = "Holding Ravi back made room for a quieter member.";
+    silent.push({ id:"ravi", delta: skills.includes("cutting_off") ? -1 : 0, why: skills.includes("cutting_off") ? "felt cut off" : "" });
+    if (skills.includes("blocking")) silent.push({ id:"meiling", delta:1, why:"the group feels less crowded" });
+  } else if (named) {
+    speakers.push({ id:named, instruction:"You were addressed directly. Respond in line with your trust." });
+    reasoning = `The facilitator spoke to ${BYID[named].name} directly, so ${BYID[named].name} answers.`;
+  } else if (stage === "storming" && !S.flags.challengeDone) {
+    speakers.push({ id:"daniel", instruction:"Challenge the point of the group.", event:"challenge" });
+    event = "Daniel challenges the value of the group (a typical storming-stage test of the facilitator).";
+    reasoning = "The group has warmed up enough for the storming stage; the sceptic tests the facilitator.";
+    S.flags.challengeDone = true;
+  } else if (last && last.who === "farah" && S.members.farah.emotion === "sad" && !S.flags.rescueDone) {
+    speakers.push({ id:"aisyah", instruction:"Rush in to comfort Farah with advice.", event:"rescue" });
+    event = "Aisyah rushes to rescue Farah with advice, which tests whether you protect Farah's space.";
+    reasoning = "Farah showed pain, and the rescuer's pattern is to fix it quickly.";
+    S.flags.rescueDone = true;
+  } else if (S.turn - S.flags.lastBlockTurn > 3 && Math.random() < .4) {
+    speakers.push({ id:"ravi", instruction:"Jump in and take over the space.", event:"interrupt" });
+    event = "Ravi fills the pause and takes over the conversation.";
+    reasoning = "No one has held Ravi back recently, so the dominant member fills the space.";
+  } else {
+    const cand = MEMBERS.filter(m => !last || m.id !== last.who).sort((a, b) => (S.members[b.id].trust - S.members[b.id].turns * 1.5) - (S.members[a.id].trust - S.members[a.id].turns * 1.5));
+    speakers.push({ id:cand[0].id, instruction:"Respond to what's been said." });
+    reasoning = `${cand[0].name} has a relatively high trust level compared with how much they've spoken.`;
+  }
+  if (skills.includes("linking") && speakers.length === 1) {
+    const other = MEMBERS.find(m => m.id !== speakers[0].id && t.includes(m.name.toLowerCase()));
+    if (other) { speakers.push({ id:other.id, instruction:"React to the link the facilitator made." }); reasoning += ` The facilitator linked two members, so ${other.name} responds as well.`; }
+  }
+  const pos = skills.filter(s => !NEG_SKILLS.has(s) && s !== "other"), neg = skills.filter(s => NEG_SKILLS.has(s));
+  const skillNote = neg.length ? `Careful: ${neg.map(s => SKILLS[s].toLowerCase()).join(" and ")} can close members down at this stage.` :
+    pos.length ? `${pos.map(s => SKILLS[s]).join(" + ")}: this helps build safety.` : "A neutral move; try reflecting a feeling or drawing someone out.";
+  return { skills, skillNote, stage, event, speakers, silent: silent.filter(s => s.delta), reasoning };
+}
+function demoMember(m, instruction, ctx) {
+  const st = S.members[m.id];
+  let delta = 0;
+  const addressedMe = ctx.addressed === m.id || ctx.text.toLowerCase().includes(m.name.toLowerCase().split(" ")[0]);
+  const good = ctx.skills.some(s => ["reflection","open_question","drawing_out","protecting","acknowledging","immediacy","blocking","linking","summarising"].includes(s));
+  const bad = ctx.skills.some(s => NEG_SKILLS.has(s));
+  if (ctx.speakerEvent === "challenge") delta = 0;
+  else if (/took your challenge well/.test(instruction)) delta = 2;
+  else if (/got defensive/.test(instruction)) delta = -1;
+  else if (addressedMe && good && !bad) delta = ctx.skills.includes("reflection") || ctx.skills.includes("drawing_out") ? 2 : 1;
+  else if (addressedMe && bad) delta = (m.id === "farah" || m.id === "daniel" || m.id === "meiling") ? -1 : 0;
+  else if (good && !bad) delta = Math.random() < .5 ? 1 : 0;
+  const newTrust = clamp(st.trust + delta, 0, 10);
+  const band = newTrust >= 7 ? "high" : newTrust >= 4 ? "mid" : "low";
+  const lines = ctx.speakerEvent && DEMO_LINES[m.id].event ? DEMO_LINES[m.id].event : DEMO_LINES[m.id][band];
+  const used = new Set(S.transcript.filter(e => e.who === m.id).map(e => e.text));
+  const text = R(lines.filter(l => !used.has(l))) || R(lines);
+  const emo = { ravi:{low:"guarded",mid:"amused",high:"sad"}, meiling:{low:"withdrawn",mid:"anxious",high:"hopeful"}, daniel:{low:"defensive",mid:"guarded",high:"anxious"}, aisyah:{low:"anxious",mid:"warm",high:"hopeful"}, farah:{low:"withdrawn",mid:"sad",high:"sad"} }[m.id][band];
+  const posture = band === "low" ? (m.id === "daniel" ? "arms_crossed" : m.id === "meiling" || m.id === "farah" ? "looking_down" : "turned_away") : band === "high" ? "leaning_in" : "open";
+  let gaze = "facilitator";
+  if (ctx.speakerEvent === "rescue") gaze = "farah";
+  else if (/Farah,/.test(text)) gaze = "farah";
+  else if (band === "low" && Math.random() < .5) gaze = "floor";
+  const feelings = {};
+  if (ctx.speakerEvent === "interrupt") feelings.meiling = -1;
+  if (/Farah,/.test(text) && m.id !== "farah") feelings.farah = 1;
+  if (m.id === "daniel" && band === "high") feelings.ravi = 1;
+  return { text, emotion:emo, posture, gaze, delta, thought: R(DEMO_THOUGHTS[delta > 0 ? "up" : delta < 0 ? "down" : "flat"]), feelings };
+}
+
+/* ============================================================
+   VOICE (browser speech synthesis + recognition)
+   ============================================================ */
+let voices = [];
+function loadVoices() { try { voices = speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang)); } catch (e) { voices = []; } }
+if ("speechSynthesis" in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+function speak(m, text) {
+  const el = document.getElementById("m-" + m.id);
+  const say = el.querySelector(".say");
+  say.textContent = text; say.classList.add("show");
+  el.classList.add("speaking"); renderMember(m.id);
+  const done = () => { el.classList.remove("speaking"); setTimeout(() => say.classList.remove("show"), 2500); renderMember(m.id); };
+  if (!S.voice || !("speechSynthesis" in window)) {
+    return new Promise(r => setTimeout(() => { done(); r(); }, clamp(text.length * 38, 1400, 6000)));
+  }
+  return new Promise(resolve => {
+    const u = new SpeechSynthesisUtterance(text);
+    const idx = MEMBERS.indexOf(m);
+    if (voices.length) u.voice = voices[(idx * 3) % voices.length];
+    u.pitch = m.voice.pitch; u.rate = m.voice.rate;
+    let finished = false;
+    const fin = () => { if (finished) return; finished = true; done(); resolve(); };
+    u.onend = fin; u.onerror = fin;
+    setTimeout(fin, 20000 + text.length * 80); // never hang the turn on a stuck engine
+    speechSynthesis.speak(u);
+  });
+}
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recog = null;
+if (SR) {
+  document.getElementById("micBtn").classList.remove("hidden");
+  recog = new SR(); recog.lang = "en-MY"; recog.interimResults = true; recog.continuous = false;
+  recog.onresult = e => { document.getElementById("input").value = Array.from(e.results).map(r => r[0].transcript).join(""); };
+  recog.onend = () => document.getElementById("micBtn").classList.remove("rec");
+  recog.onerror = () => document.getElementById("micBtn").classList.remove("rec");
+}
+
+/* ============================================================
+   SAFETY: fixed rules, never left to the model
+   ============================================================ */
+const RISK_RE = /\b(kill(ing)? myself|suicid\w*|end it all|self[- ]?harm|hurt(ing)? myself|don'?t want to (live|be alive|be here anymore)|better off dead)\b/i;
+function riskCheck(text, who) {
+  if (!RISK_RE.test(text)) return;
+  const b = document.getElementById("riskBanner");
+  b.innerHTML = `<b>Risk flag (${esc(who)}):</b> this line contains risk language. In real practice, stop and follow your agency's risk assessment protocol. Pause the session if you need to.`;
+  b.classList.remove("hidden");
+  addLine({ turn:S.turn, who:"system", text:`Risk flag raised on ${who}'s line by the fixed keyword rule (the AI cannot turn this off).` });
+}
+
+/* ============================================================
+   TURN LOOP
+   ============================================================ */
+const inputEl = document.getElementById("input");
+function setBusy(b) {
+  S.busy = b;
+  const dis = b || !S.started || S.paused || S.ended;
+  ["sendBtn","silentBtn","micBtn"].forEach(id => document.getElementById(id).disabled = dis);
+  inputEl.disabled = dis;
+  document.getElementById("endBtn").disabled = !S.started || S.ended || b;
+  inputEl.placeholder = b ? "Waiting for the group to respond…" : "Speak to the group, e.g. “Welcome back, everyone. How has this week been?”";
+  if (!dis) inputEl.focus();
+}
+function setAddressed(id) {
+  if (!S.started || S.ended) return;
+  S.addressed = id;
+  document.getElementById("addrChip").textContent = id ? BYID[id].name : "the whole group";
+  document.getElementById("addrClear").classList.toggle("hidden", !id);
+  MEMBERS.forEach(m => renderMember(m.id));
+}
+document.getElementById("addrClear").onclick = () => setAddressed(null);
+
+async function facilitatorTurn(text) {
+  if (S.busy || !S.started || S.ended) return;
+  const isSilence = text === "[silence]";
+  text = text.trim(); if (!text) return;
+  S.turn++;
+  const addressed = S.addressed;
+  addLine({ turn:S.turn, who:"facilitator", text: isSilence ? "(holds the silence)" : text, to: addressed });
+  riskCheck(text, "facilitator");
+  inputEl.value = "";
+  setAddressed(null);
+  setBusy(true);
+  renderAll();
+  try {
+    // 1. Director decides
+    let dec, source = S.mode, t0 = performance.now();
+    setActivity("The director is deciding who speaks next…");
+    if (S.mode === "llm") {
+      try { dec = await llmDirector(isSilence ? "(The facilitator stays silent and lets the silence sit.)" : text, addressed && BYID[addressed].name); }
+      catch (e) { dec = demoDirector(text, addressed); source = "fallback"; dec.reasoning = `(Director model failed: ${e.message}. Used scripted rules.) ` + dec.reasoning; setStatus("bad", "Model error");
+        addLine({ turn:S.turn, who:"warn", text:`⚠ The director model failed (${e.message}), so the scripted rules chose who speaks this turn. Check Settings → Test connection.` }); }
+      if (dec.stage === "storming" || S.flags.challengeDone) S.flags.challengeDone = true;
+    } else { await new Promise(r => setTimeout(r, 600)); dec = demoDirector(text, addressed); }
+    const directorSecs = ((performance.now() - t0) / 1000).toFixed(1);
+    S.stage = dec.stage;
+    dec.speakers.forEach(sp => document.getElementById("m-" + sp.id).classList.add("pending"));
+    const record = { turn:S.turn, stage:dec.stage, skills:dec.skills, skillNote:dec.skillNote, event:dec.event, speakers:dec.speakers, reasoning:dec.reasoning, source, trustChanges:[], directorSecs };
+    addDecision(record);
+    S.transcript[S.transcript.length - 1].skills = dec.skills;
+    for (const r of dec.silent || []) applyTrust(r.id, r.delta, r.why, record);
+    renderAll();
+    // 2. Each chosen member takes a turn
+    for (const sp of dec.speakers) {
+      if (S.paused) await waitForResume();
+      const m = BYID[sp.id];
+      setTyping(m.id, true);
+      setActivity(`${m.name} is thinking about what to say…`);
+      const pend = document.createElement("div"); pend.className = "line pending"; pend.textContent = `${m.name} is about to speak…`;
+      tPanel.appendChild(pend); tPanel.scrollTop = tPanel.scrollHeight;
+      const t1 = performance.now();
+      let out;
+      try {
+        if (S.mode === "llm") out = await llmMember(m, sp.instruction);
+        else { await new Promise(r => setTimeout(r, 500 + Math.random() * 500)); out = demoMember(m, sp.instruction, { text, addressed, skills:dec.skills, speakerEvent:sp.event }); }
+      } catch (e) {
+        out = demoMember(m, sp.instruction, { text, addressed, skills:dec.skills, speakerEvent:sp.event });
+        record.source = "fallback";
+        out.thought = `(member model failed: ${e.message}) ` + out.thought;
+        addLine({ turn:S.turn, who:"warn", text:`⚠ ${m.name}'s model failed (${e.message}), so this line is scripted.` });
+      }
+      pend.remove();
+      setTyping(m.id, false); setActivity(null);
+      document.getElementById("m-" + m.id).classList.remove("pending");
+      if (record.el) record.el.insertAdjacentHTML("beforeend", `<div class="k">${esc(m.name)} replied in ${((performance.now() - t1) / 1000).toFixed(1)}s</div>`);
+      const st = S.members[m.id];
+      st.emotion = out.emotion; st.posture = out.posture; st.gaze = out.gaze; st.thought = out.thought; st.turns++;
+      if (out.delta) applyTrust(m.id, out.delta, "their own reaction", record);
+      for (const [o, v] of Object.entries(out.feelings || {})) { const k = relKey(m.id, o); S.rel[k] = clamp((S.rel[k] || 0) + v, -3, 3); }
+      addLine({ turn:S.turn, who:m.id, text:out.text, thought:out.thought, event:sp.event, emotion:out.emotion, trust:st.trust });
+      riskCheck(out.text, m.name);
+      renderAll();
+      await speak(m, out.text);
+    }
+    if (!dec.speakers.length) addLine({ turn:S.turn, who:"system", text:"The group sits in silence." });
+  } finally {
+    setActivity(null);
+    document.querySelectorAll(".member.pending").forEach(e => e.classList.remove("pending"));
+    setBusy(false);
+  }
+}
+let actTimer = null, actStart = 0;
+function setActivity(text) {
+  const a = document.getElementById("activity");
+  clearInterval(actTimer);
+  if (!text) { a.classList.add("hidden"); return; }
+  actStart = performance.now();
+  a.querySelector(".txt").textContent = text;
+  a.querySelector(".extra").textContent = "";
+  a.querySelector(".prog").textContent = S.mode === "llm" ? "Sent to the model, waiting for it to start…" : "";
+  const tick = () => {
+    const s = Math.round((performance.now() - actStart) / 1000);
+    a.querySelector(".el").textContent = s < 15 ? `${s}s` : `${s}s · local models can take a while, it's still working`;
+  };
+  tick(); actTimer = setInterval(tick, 500);
+  a.classList.remove("hidden");
+}
+function setProgress(t) { const x = document.querySelector("#activity .prog"); if (x) x.textContent = t; }
+function noteActivity(t) { const x = document.querySelector("#activity .extra"); if (x) x.textContent = t; }
+function applyTrust(id, delta, why, record) {
+  if (!delta) return;
+  const st = S.members[id];
+  const before = st.trust; st.trust = clamp(st.trust + delta, 0, 10);
+  const real = st.trust - before;
+  if (real) appendTrustToDecision(record, { id, delta:real, why });
+}
+function waitForResume() { return new Promise(r => { const iv = setInterval(() => { if (!S.paused) { clearInterval(iv); r(); } }, 200); }); }
+
+/* ============================================================
+   DEBRIEF (observer agent)
+   ============================================================ */
+function skillCounts() {
+  const c = {};
+  S.transcript.filter(e => e.who === "facilitator").forEach(e => (e.skills || []).forEach(s => c[s] = (c[s] || 0) + 1));
+  return c;
+}
+async function llmObserver() {
+  const sys = `You are an experienced group counselling supervisor observing a trainee in a training simulation. Give a fair, specific, encouraging debrief grounded in the transcript. Refer to turn numbers. Reply with ONLY JSON:
+{"summary":"3-4 sentences","strengths":[{"turn":1,"note":"..."}],"growth":[{"turn":1,"note":"..."}],"members":[{"id":"memberid","note":"how this member experienced the session"}],"next_time":["...","..."]}`;
+  const lines = S.transcript.filter(e => e.who !== "system" && e.who !== "warn").map(e =>
+    e.who === "facilitator" ? `[turn ${e.turn}] Facilitator: ${e.text}  {skills: ${(e.skills || []).join(", ")}}` : `[turn ${e.turn}] ${BYID[e.who].name} (trust now ${e.trust}): ${e.text}  {private thought: ${e.thought || "-"}}`).join("\n");
+  const hidden = MEMBERS.map(m => `- ${m.id} (${m.name}, ${m.role}): hidden story: ${m.hidden}. Trust ${S.members[m.id].startTrust} → ${S.members[m.id].trust}.`).join("\n");
+  const obj = await callJSON(directorEndpoint(), config.directorModel, [{ role:"system", content:sys }, { role:"user", content:`Members:\n${hidden}\n\nTranscript:\n${lines}` }], { temperature:0.3, max_tokens:900, onProgress:progressReporter() });
+  return obj;
+}
+function demoObserver() {
+  const fac = S.transcript.filter(e => e.who === "facilitator");
+  const strengths = [], growth = [];
+  for (const e of fac) {
+    const pos = (e.skills || []).filter(s => !NEG_SKILLS.has(s) && s !== "other");
+    const neg = (e.skills || []).filter(s => NEG_SKILLS.has(s));
+    if (pos.length && strengths.length < 4) strengths.push({ turn:e.turn, note:`You used ${pos.map(s => SKILLS[s].toLowerCase()).join(" and ")}.` });
+    if (neg.length && growth.length < 4) growth.push({ turn:e.turn, note:`${neg.map(s => SKILLS[s]).join(" and ")}: try reflecting what the member feels instead.` });
+  }
+  const quiet = MEMBERS.filter(m => S.members[m.id].turns === 0);
+  if (quiet.length) growth.push({ turn:null, note:`${quiet.map(m => m.name).join(", ")} never spoke. Try drawing quieter members out gently by name.` });
+  const opened = MEMBERS.filter(m => S.members[m.id].trust >= 7);
+  return {
+    summary:`You ran ${fac.length} facilitator turns. Average trust moved from ${avgTrust(true)} to ${avgTrust(false)}. ${opened.length ? opened.map(m => m.name).join(", ") + " felt safe enough to share some of their private story." : "No member reached the trust level needed to share their private story yet."} (Demo mode: this feedback comes from simple rules, not an AI observer.)`,
+    strengths, growth,
+    members: MEMBERS.map(m => ({ id:m.id, note:`Trust ${S.members[m.id].startTrust} → ${S.members[m.id].trust}, spoke ${S.members[m.id].turns} time(s).` })),
+    next_time:["Reflect feelings before asking the next question.","Hold the dominant member back kindly, then come back to him.","Protect a member's space when others rush in to fix things."],
+  };
+}
+function avgTrust(start) { return (MEMBERS.reduce((a, m) => a + (start ? S.members[m.id].startTrust : S.members[m.id].trust), 0) / MEMBERS.length).toFixed(1); }
+
+async function endSession() {
+  if (!S.started || S.ended || S.busy) return;
+  S.ended = true; setBusy(true);
+  try { speechSynthesis.cancel(); } catch (e) {}
+  const box = document.getElementById("debriefBox");
+  box.innerHTML = `<h2>Debrief</h2><p class="hint">The observer is reviewing your session…</p>`;
+  document.getElementById("debriefModal").classList.remove("hidden");
+  let obs, note = "";
+  if (S.mode === "llm") { try { obs = await llmObserver(); } catch (e) { obs = demoObserver(); note = `The observer model failed (${e.message}), so this debrief uses the scripted rules.`; } }
+  else obs = demoObserver();
+  renderDebrief(obs, note);
+  setBusy(false);
+}
+function renderDebrief(obs, note) {
+  const counts = skillCounts(), max = Math.max(1, ...Object.values(counts));
+  const bars = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([s, n]) =>
+    `<div class="bar"><span>${esc(SKILLS[s] || s)}</span><div class="track"><div class="fill ${NEG_SKILLS.has(s) ? "neg" : ""}" style="width:${n / max * 100}%"></div></div><span>${n}</span></div>`).join("") || `<p class="hint">No facilitator turns recorded.</p>`;
+  const memberNotes = Object.fromEntries((obs.members || []).map(x => [String(x.id).toLowerCase(), x.note]));
+  const tiles = MEMBERS.map(m => {
+    const st = S.members[m.id], d = st.trust - st.startTrust;
+    return `<div class="t"><b style="color:${m.color}">${m.name}</b> <span class="hint">${m.role}</span><br>Trust ${st.startTrust} → <b>${st.trust}</b> <span class="dd ${d > 0 ? "up" : d < 0 ? "down" : ""}">(${d > 0 ? "+" : ""}${d})</span><br><span class="hint">${esc(memberNotes[m.id] || "")}</span><details style="margin-top:4px"><summary class="hint">Their private story</summary><span style="font-size:12.5px">${esc(m.hidden)}</span></details></div>`;
+  }).join("");
+  const moment = (x, cls) => `<div class="moment ${cls}">${esc(x.note)} ${x.turn ? `<a data-turn="${+x.turn}">turn ${+x.turn} →</a>` : ""}</div>`;
+  document.getElementById("debriefBox").innerHTML = `
+    <h2>Debrief</h2>
+    ${note ? `<p class="note">${esc(note)}</p>` : ""}
+    <p>${esc(obs.summary || "")}</p>
+    <h3>What went well</h3>${(obs.strengths || []).map(x => moment(x, "")).join("") || '<p class="hint">Nothing noted.</p>'}
+    <h3>To work on</h3>${(obs.growth || []).map(x => moment(x, "grow")).join("") || '<p class="hint">Nothing noted.</p>'}
+    <h3>Skills you used</h3><div class="bars">${bars}</div>
+    <h3>How each member experienced it</h3><div class="tt">${tiles}</div>
+    ${(obs.next_time || []).length ? `<h3>Next time</h3><ul>${obs.next_time.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    <div class="actions">
+      <button class="btn secondary" id="dlBtn">Download session (JSON)</button>
+      <button class="btn secondary" id="closeDebrief">Back to the transcript</button>
+      <button class="btn" id="newSession">New session</button>
+    </div>`;
+  document.querySelectorAll("#debriefBox a[data-turn]").forEach(a => a.onclick = () => {
+    document.getElementById("debriefModal").classList.add("hidden");
+    const idx = S.transcript.findIndex(e => e.turn === +a.dataset.turn && e.who === "facilitator");
+    const el = document.getElementById("line-" + idx);
+    document.querySelector('.tabs button[data-tab="transcript"]').click();
+    if (el) { el.scrollIntoView({ behavior:"smooth", block:"center" }); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+  });
+  document.getElementById("closeDebrief").onclick = () => document.getElementById("debriefModal").classList.add("hidden");
+  document.getElementById("newSession").onclick = () => location.reload();
+  document.getElementById("dlBtn").onclick = () => {
+    const data = { app:APP_VERSION, mode:S.mode, endedAt:new Date().toISOString(), transcript:S.transcript, decisions:S.decisions.map(({ el, ...d }) => d), members:S.members, relationships:S.rel, debrief:obs };
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type:"application/json" }));
+    a.download = `group-session-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.json`; a.click();
+  };
+}
+
+/* ============================================================
+   UI WIRING
+   ============================================================ */
+document.getElementById("castList").innerHTML = MEMBERS.map(m => `<div class="c"><span class="sw" style="background:${m.color}"></span><span><b>${m.name}</b> <span class="hint">(${m.role})</span><br>${esc(m.pub)}</span></div>`).join("");
+function toggleBtn(id, key, after) {
+  const b = document.getElementById(id);
+  b.setAttribute("aria-pressed", S[key]);
+  b.onclick = () => { S[key] = !S[key]; b.setAttribute("aria-pressed", S[key]); store(key, S[key] ? "1" : "0"); after && after(); };
+}
+S.xray = store("xray") === "1"; S.lines = store("lines") !== "0"; S.voice = store("voice") === "1";
+toggleBtn("xrayBtn", "xray", () => { renderAll(); document.querySelectorAll(".line .pt").forEach(p => p.classList.toggle("hidden", !S.xray)); });
+toggleBtn("linesBtn", "lines", renderLines);
+toggleBtn("voiceBtn", "voice", () => { if (!S.voice) try { speechSynthesis.cancel(); } catch (e) {} });
+
+document.getElementById("sendBtn").onclick = () => facilitatorTurn(inputEl.value);
+document.getElementById("silentBtn").onclick = () => facilitatorTurn("[silence]");
+inputEl.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); facilitatorTurn(inputEl.value); } });
+document.getElementById("micBtn").onclick = () => {
+  if (!recog) return;
+  const b = document.getElementById("micBtn");
+  if (b.classList.contains("rec")) { recog.stop(); return; }
+  try { recog.start(); b.classList.add("rec"); } catch (e) {}
+};
+document.getElementById("endBtn").onclick = endSession;
+document.getElementById("pauseBtn").onclick = () => {
+  S.paused = true; try { speechSynthesis.pause(); } catch (e) {}
+  document.getElementById("pausedOverlay").classList.remove("hidden"); setBusy(S.busy);
+};
+document.getElementById("resumeBtn").onclick = () => {
+  S.paused = false; try { speechSynthesis.resume(); } catch (e) {}
+  document.getElementById("pausedOverlay").classList.add("hidden"); setBusy(S.busy);
+};
+
+// settings
+const fields = ["memberEndpoint","memberModel","directorEndpoint","directorModel"];
+function openSettings() { fields.forEach(f => document.getElementById(f).value = config[f]); document.getElementById("testResult").textContent = ""; document.getElementById("settingsModal").classList.remove("hidden"); }
+document.getElementById("settingsBtn").onclick = openSettings;
+document.getElementById("startSettingsBtn").onclick = openSettings;
+document.getElementById("saveBtn").onclick = () => {
+  fields.forEach(f => { config[f] = document.getElementById(f).value.trim(); store(f, config[f]); });
+  if (!config.memberEndpoint) { config.memberEndpoint = DEFAULTS.memberEndpoint; store("memberEndpoint", config.memberEndpoint); }
+  document.getElementById("settingsModal").classList.add("hidden");
+};
+document.getElementById("resetBtn").onclick = () => fields.forEach(f => document.getElementById(f).value = DEFAULTS[f]);
+document.getElementById("testBtn").onclick = async () => {
+  const out = document.getElementById("testResult");
+  const ep = document.getElementById("memberEndpoint").value.trim(), mm = document.getElementById("memberModel").value.trim();
+  const de = document.getElementById("directorEndpoint").value.trim() || ep, dm = document.getElementById("directorModel").value.trim();
+  out.innerHTML = "Sending a real director request and a real member request (the same size as in a session)… this can take a minute.";
+  const one = async (label, e, m, messages, max_tokens) => {
+    try {
+      const r = await callLLM(e, m, messages, { max_tokens, temperature:0.4, withTiming:true });
+      const ok = !!extractJSON(r.content);
+      const first = r.firstMs / 1000, total = r.totalMs / 1000;
+      const verdict = total > 45 ? " Too slow for live turns." : total > 20 ? " Usable but slow." : " Good.";
+      return `<b>${label}</b> (${esc(m)}): started replying after <b>${first.toFixed(1)}s</b>, finished after <b>${total.toFixed(1)}s</b>, ${ok ? "valid JSON" : "<b>reply was not valid JSON</b>"}.${verdict}`;
+    } catch (err) { return `<b>${label}</b> (${esc(m)}): failed: ${esc(err.message)}`; }
+  };
+  const dirMsgs = [{ role:"system", content:directorSystemPrompt() }, { role:"user", content:`Turn 1. Current stage: forming.\nMember state:\n${memberSummary()}\n\nRecent conversation:\n(nothing said yet)\n\nFacilitator's latest move: Welcome back, everyone. How has this week been for you?` }];
+  const memMsgs = [{ role:"system", content:memberSystemPrompt(MEMBERS[0]) }, { role:"user", content:"Your current trust in the group: 5/10. Your mood: calm.\nRecent conversation:\nFacilitator: Welcome back, everyone. How has this week been for you?\n\nDirector's private note for your next turn (do not repeat it): respond naturally\nNow give your turn as JSON." }];
+  const [a, b] = await Promise.all([one("Members", ep, mm, memMsgs, 300), one("Director", de, dm, dirMsgs, 450)]);
+  out.innerHTML = a + "<br>" + b;
+};
+document.querySelectorAll(".modal").forEach(mo => mo.addEventListener("click", e => { if (e.target === mo && mo.id === "settingsModal") mo.classList.add("hidden"); }));
+
+document.getElementById("startBtn").onclick = () => {
+  S.mode = document.querySelector('input[name="mode"]:checked').value;
+  store("mode", S.mode);
+  document.getElementById("startModal").classList.add("hidden");
+  document.getElementById("modeBadge").textContent = S.mode === "llm" ? "Mode: AI agents" : "Mode: demo (scripted)";
+  S.started = true;
+  setStatus(S.mode === "llm" ? "" : "ok", S.mode === "llm" ? "Waiting for first reply" : "Demo mode");
+  tPanel.innerHTML = "";
+  addLine({ turn:0, who:"system", text:"The five members settle into the circle. It's your move: open the session." });
+  setBusy(false);
+};
+(function init() {
+  const savedMode = store("mode");
+  if (savedMode) { const r = document.querySelector(`input[name="mode"][value="${savedMode}"]`); if (r) r.checked = true; }
+  resetState(); buildStage(); renderAll();
+})();
+</script>
+</body>
+</html>

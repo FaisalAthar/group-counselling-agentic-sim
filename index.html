@@ -38,6 +38,7 @@ button{cursor:pointer}
 /* ---------- header ---------- */
 header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
 header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.1px}
+header .ver{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--accent);color:var(--accent-ink);vertical-align:2px;margin-left:4px}
 header .sub{color:var(--ink-2);font-size:13px}
 .spacer{flex:1}
 .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 9px;border-radius:999px;background:var(--chip);color:var(--ink-2)}
@@ -186,7 +187,7 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
 <body>
 <header>
   <div>
-    <h1>Group Circle Simulator</h1>
+    <h1>Group Circle Simulator <span class="ver" id="versionTag" title="Build version. Older versions are in the versions/ folder."></span></h1>
     <div class="sub">Practise running a counselling group. Stage 1 prototype.</div>
   </div>
   <div class="spacer"></div>
@@ -300,7 +301,8 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
 /* ============================================================
    CONFIG
    ============================================================ */
-const APP_VERSION = "stage1-v0.1";
+/* Bump this on every build, and save a copy to versions/ (see CLAUDE.md). */
+const APP_VERSION = "v1.6";
 const DEFAULTS = {
   memberEndpoint: "https://lsctdscoma003.tailfeee99.ts.net/v1/chat/completions",
   memberModel: "qwen2.5-14b-instruct",
@@ -1471,6 +1473,8 @@ document.getElementById("startBtn").onclick = () => {
   setBusy(false);
 };
 (function init() {
+  document.getElementById("versionTag").textContent = APP_VERSION;
+  document.title = "Group Circle Simulator " + APP_VERSION;
   const savedMode = store("mode");
   if (savedMode) { const r = document.querySelector(`input[name="mode"][value="${savedMode}"]`); if (r) r.checked = true; }
   resetState(); buildStage(); renderAll();

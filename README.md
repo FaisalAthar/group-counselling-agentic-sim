@@ -44,3 +44,17 @@ Each facilitator turn makes one director call and one or two member calls. Membe
 
 2. Stylized 3D avatars (VRM, toon-shaded) and local Kokoro voices, one per member.
 3. Spoken input with interruptions, and a replay view for the observer.
+
+## Versions
+
+The version number is shown next to the title. Each build is also saved as a copy in [`versions/`](versions/), and GitHub Pages serves those too, so you can open an older build at `https://faisalathar.github.io/group-counselling-agentic-sim/versions/group-circle-sim-v1.4.html`.
+
+| Version | What changed |
+|---|---|
+| v1.6 | Version number shown next to the title; every build saved in `versions/` |
+| v1.5 | The group keeps talking among themselves after answering you; you can jump in at any time; a setting for how much the group talks on its own |
+| v1.4 | Several members respond when you address the whole group; non-verbal replies (e.g. a nod); speaking order shown on the circle |
+| v1.3 | Structured output forces valid JSON from small models; plain-speech replies are used instead of scripted ones |
+| v1.2 | Streaming replies with live progress; longer timeouts for slow models; realistic connection test with timings |
+| v1.1 | Status card and timer while the group responds; model errors shown in the transcript |
+| v1.0 | First Stage 1 prototype: five members, director, observer debrief, demo mode, browser voice |
