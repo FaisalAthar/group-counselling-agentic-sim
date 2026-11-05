@@ -16,6 +16,10 @@ Every agent replies in JSON (`text`, `emotion`, `gaze`, `posture`, `trust_delta`
 - "X-ray thoughts" shows each member's private thought next to what they say out loud.
 - The "AI decisions" tab logs every director choice and its reasoning.
 
+## 3D view
+
+The circle is drawn in 3D with [three.js](https://threejs.org) (MIT licence), stored in `lib/` so the page does not depend on a CDN. The camera is the facilitator's seat, so members who talk to you look straight at you. Click a head or a nameplate to address that member.
+
 ## Running it
 
 It is a single static page, so open `index.html` from GitHub Pages or any web server.
@@ -51,6 +55,7 @@ The version number is shown next to the title. Each build is also saved as a cop
 
 | Version | What changed |
 |---|---|
+| v1.7 | Stylized 3D view: vinyl-toy heads with their own looks in a counselling room; heads turn to whoever they are listening or talking to, look at the floor when sad and out of the window when bored; the 2D circle is used if WebGL is not available |
 | v1.6 | Version number shown next to the title; every build saved in `versions/` |
 | v1.5 | The group keeps talking among themselves after answering you; you can jump in at any time; a setting for how much the group talks on its own |
 | v1.4 | Several members respond when you address the whole group; non-verbal replies (e.g. a nod); speaking order shown on the circle |

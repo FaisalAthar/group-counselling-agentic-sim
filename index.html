@@ -77,6 +77,17 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
   background:radial-gradient(ellipse 62% 55% at 50% 52%,var(--stage-floor) 0 60%,var(--stage) 61%);}
 #stage .rug{position:absolute;left:50%;top:52%;width:44%;height:36%;transform:translate(-50%,-50%);border-radius:50%;border:2px dashed var(--line);opacity:.8}
 #lines{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+/* 3D mode: the canvas draws the room and heads; .member becomes a floating nameplate */
+#stage.three{background:#efe4d6}
+#stage.three .three-canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#stage.three .fig,#stage.three .rug,#stage.three .you,#stage.three #lines{display:none}
+#stage.three .member{width:auto;min-width:0;transform:translate(-50%,-100%);z-index:3}
+#stage.three .member .name{display:inline-block;background:color-mix(in srgb,var(--surface) 88%,transparent);padding:1px 9px;border-radius:999px;box-shadow:var(--shadow);margin:0}
+#stage.three .member .trustlbl{display:block;margin-top:2px;font-size:10.5px;color:#4b4f57;text-shadow:0 1px 0 rgba(255,255,255,.7)}
+#stage.three .member.top .say,#stage.three .member.top .think{top:auto;bottom:100%;margin-top:0;margin-bottom:4px}
+#stage.three .bubble{max-width:260px;width:max-content}
+#stage.three .typing{top:-30px}
+@media (max-width:560px){#stage.three .member .trustlbl{display:none} #stage.three .bubble{max-width:180px}}
 #lines line{vector-effect:non-scaling-stroke;transition:stroke .6s,stroke-width .6s,opacity .6s}
 .member{position:absolute;width:17%;min-width:74px;transform:translate(-50%,-50%);text-align:center;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
 .member svg.fig{width:100%;height:auto;overflow:visible;display:block}
@@ -219,7 +230,7 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
       <div class="legend">
         <span><i style="background:var(--good)"></i>connection</span>
         <span><i style="background:var(--bad)"></i>tension</span>
-        <span>Ring around a member = trust in the group (0–10)</span>
+        <span>Ring around each member = trust in the group (0–10)</span>
         <span>Click a member to address them</span>
       </div>
     </div>
@@ -302,7 +313,7 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
    CONFIG
    ============================================================ */
 /* Bump this on every build, and save a copy to versions/ (see CLAUDE.md). */
-const APP_VERSION = "v1.6";
+const APP_VERSION = "v1.7";
 const DEFAULTS = {
   memberEndpoint: "https://lsctdscoma003.tailfeee99.ts.net/v1/chat/completions",
   memberModel: "qwen2.5-14b-instruct",
@@ -362,8 +373,8 @@ const MEMBERS = [
 ];
 const BYID = Object.fromEntries(MEMBERS.map(m => [m.id, m]));
 const INITIAL_REL = { "daniel|ravi": -1, "aisyah|farah": 1, "aisyah|daniel": -1 };
-const EMOTIONS = ["calm","anxious","defensive","sad","hopeful","irritated","withdrawn","warm","amused","guarded"];
-const EMO_COLOR = { calm:"#7fb3c8", anxious:"#e3c25a", defensive:"#e07b56", sad:"#6d8fd6", hopeful:"#7fcf8e", irritated:"#d9534f", withdrawn:"#9aa0a8", warm:"#f0a07a", amused:"#f2c94c", guarded:"#b08a6e" };
+const EMOTIONS = ["calm","anxious","defensive","sad","hopeful","irritated","withdrawn","warm","amused","guarded","bored"];
+const EMO_COLOR = { calm:"#7fb3c8", anxious:"#e3c25a", defensive:"#e07b56", sad:"#6d8fd6", hopeful:"#7fcf8e", irritated:"#d9534f", withdrawn:"#9aa0a8", warm:"#f0a07a", amused:"#f2c94c", guarded:"#b08a6e", bored:"#b9b39a" };
 const POSTURES = ["open","leaning_in","arms_crossed","turned_away","looking_down"];
 const SKILLS = {
   open_question:"Open question", reflection:"Reflection of feeling", summarising:"Summarising", linking:"Linking members",
@@ -443,6 +454,7 @@ function buildStage() {
   }
 }
 const MOUTH = {
+  bored:"M52 78 L68 77",
   warm:"M49 75 Q60 85 71 75", hopeful:"M49 75 Q60 84 71 75", amused:"M48 74 Q60 87 72 74",
   sad:"M50 80 Q60 72 70 80", anxious:"M48 77 Q54 73 60 77 Q66 81 72 77",
   defensive:"M50 78 L70 76", irritated:"M50 79 Q60 74 70 79", withdrawn:"M55 78 L65 78",
@@ -712,7 +724,7 @@ const MEMBER_SCHEMA = {
     text:{ type:"string" },
     action:{ type:"string" },
     emotion:{ type:"string", enum:EMOTIONS },
-    gaze:{ type:"string", enum:["facilitator","floor", ...MEMBERS.map(m => m.id)] },
+    gaze:{ type:"string", enum:["facilitator","floor","window", ...MEMBERS.map(m => m.id)] },
     posture:{ type:"string", enum:POSTURES },
     trust_delta:{ type:"integer" },
     private_thought:{ type:"string" },
@@ -833,7 +845,7 @@ Rules:
 - After each turn, honestly judge how the facilitator's handling made you feel and set trust_delta (-2 to +2, usually -1, 0 or +1).
 
 Reply with ONLY a JSON object:
-{"text":"what you say out loud","action":"","emotion":"one of ${EMOTIONS.join("|")}","gaze":"facilitator, floor, or a member id","posture":"one of ${POSTURES.join("|")}","trust_delta":0,"private_thought":"one short first-person sentence you are thinking but not saying","feelings":[{"id":"memberid","change":1}]}
+{"text":"what you say out loud","action":"","emotion":"one of ${EMOTIONS.join("|")}","gaze":"who or where you look: facilitator, a member id, floor (sad or ashamed) or window (bored or switching off)","posture":"one of ${POSTURES.join("|")}","trust_delta":0,"private_thought":"one short first-person sentence you are thinking but not saying","feelings":[{"id":"memberid","change":1}]}
 "feelings" lists any member you now feel closer to (change 1) or more tension with (change -1) because of this moment. Use [] if none.`;
 }
 async function llmMember(m, instruction) {
@@ -871,7 +883,7 @@ function normaliseMember(obj, id) {
   const emotion = EMOTIONS.includes(obj.emotion) ? obj.emotion : S.members[id].emotion;
   const posture = POSTURES.includes(obj.posture) ? obj.posture : S.members[id].posture;
   let gaze = String(obj.gaze || "facilitator").toLowerCase().replace(/\s+/g, "");
-  if (!(gaze === "facilitator" || gaze === "floor" || BYID[gaze]) || gaze === id) gaze = "facilitator";
+  if (!(gaze === "facilitator" || gaze === "floor" || gaze === "window" || BYID[gaze]) || gaze === id) gaze = "facilitator";
   const feelings = {};
   if (Array.isArray(obj.feelings)) obj.feelings.forEach(f => { const kk = String(f.id || "").toLowerCase().replace(/\s+/g, ""); if (BYID[kk] && kk !== id) feelings[kk] = clamp(Math.round(+f.change || 0), -1, 1); });
   else if (obj.feelings && typeof obj.feelings === "object") for (const [k, v] of Object.entries(obj.feelings)) { const kk = k.toLowerCase().replace(/\s+/g, ""); if (BYID[kk] && kk !== id) feelings[kk] = clamp(Math.round(+v || 0), -1, 1); }
@@ -1480,5 +1492,492 @@ document.getElementById("startBtn").onclick = () => {
   resetState(); buildStage(); renderAll();
 })();
 </script>
+<script type="module">
+/* ============================================================
+   3D CIRCLE (stylized vinyl-toy heads in a counselling room)
+   Reads the same state as the 2D circle (S.members, S.rel, S.transcript,
+   the .speaking / .pending classes) every frame, so the rest of the app
+   doesn't need to know it exists. If WebGL isn't available the page keeps
+   the 2D circle.
+   ============================================================ */
+import * as THREE from "./lib/three.module.min.js";
+
+(function start3D() {
+  const stage = document.getElementById("stage");
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    if (!renderer.getContext()) throw new Error("no WebGL context");
+  } catch (e) { console.warn("3D view unavailable, using the 2D circle:", e.message); return; }
+
+  stage.classList.add("three");
+  renderer.domElement.className = "three-canvas";
+  stage.prepend(renderer.domElement);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
+
+  const WALL = "#efe4d6";
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(WALL);
+  const camera = new THREE.PerspectiveCamera(40, 4 / 3, 0.1, 60);
+  const CENTER = new THREE.Vector3(0, 0, -0.6);
+  const RADIUS = 1.75;
+
+  /* ---------- textures ---------- */
+  function canvasTex(w, h, draw, { repeat, color = true } = {}) {
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    draw(c.getContext("2d"), w, h);
+    const t = new THREE.CanvasTexture(c);
+    if (color) t.colorSpace = THREE.SRGBColorSpace;
+    if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+    t.anisotropy = 4;
+    return t;
+  }
+  // Short random strands: used as a bump map so hair and knitwear look fuzzy.
+  const FUZZ = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = "#808080"; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 5000; i++) {
+      const x = Math.random() * w, y = Math.random() * h, a = Math.random() * Math.PI, l = 2 + Math.random() * 5;
+      const v = Math.floor(90 + Math.random() * 120);
+      g.strokeStyle = `rgb(${v},${v},${v})`; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+    }
+  }, { repeat: [5, 5], color: false });
+  const KNIT = canvasTex(128, 128, (g, w, h) => {
+    g.fillStyle = "#808080"; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 8) for (let x = 0; x < w; x += 8) {
+      g.fillStyle = (x / 8 + y / 8) % 2 ? "#9a9a9a" : "#6a6a6a"; g.beginPath(); g.ellipse(x + 4, y + 4, 3, 4, 0, 0, Math.PI * 2); g.fill();
+    }
+  }, { repeat: [6, 6], color: false });
+
+  const mat = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0, ...o });
+  const hairMat = color => mat(color, { roughness: 1, bumpMap: FUZZ, bumpScale: 2.2, side: THREE.DoubleSide });
+  const knitMat = color => mat(color, { roughness: 1, bumpMap: KNIT, bumpScale: 1.2 });
+  const skinMat = color => mat(color, { roughness: 0.5 });
+  const shade = (hex, f) => { const c = new THREE.Color(hex); c.offsetHSL(0, -0.05, f); return c; };
+
+  function add(parent, geo, material, pos, opts = {}) {
+    const m = new THREE.Mesh(geo, material);
+    if (pos) m.position.set(pos[0], pos[1], pos[2]);
+    if (opts.rot) m.rotation.set(opts.rot[0], opts.rot[1], opts.rot[2]);
+    if (opts.scale) m.scale.set(opts.scale[0], opts.scale[1], opts.scale[2]);
+    m.castShadow = opts.cast !== false; m.receiveShadow = !!opts.receive;
+    parent.add(m); return m;
+  }
+
+  /* ---------- the room ---------- */
+  const room = new THREE.Group(); scene.add(room);
+  const floorTex = canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = "#d8bf9f"; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 8; i++) {
+      g.fillStyle = i % 2 ? "#d2b896" : "#dcc4a6"; g.fillRect(0, i * 64, w, 62);
+      g.fillStyle = "rgba(120,90,60,.25)"; g.fillRect(0, i * 64 + 62, w, 2);
+      const off = (i * 173) % w; g.fillRect(off, i * 64, 2, 62);
+    }
+  }, { repeat: [3, 3] });
+  add(room, new THREE.PlaneGeometry(16, 16), mat("#ffffff", { map: floorTex, roughness: 0.9 }), [0, 0, 0], { rot: [-Math.PI / 2, 0, 0], receive: true, cast: false });
+  const rugTex = canvasTex(512, 512, (g, w, h) => {
+    const cx = w / 2, cy = h / 2;
+    const rings = ["#e9dcc9", "#e2cdb4", "#ecdfcd", "#dcc2a5", "#e9dcc9", "#d9bf9f"];
+    for (let i = 0; i < rings.length; i++) { g.fillStyle = rings[i]; g.beginPath(); g.arc(cx, cy, w / 2 - i * 34, 0, Math.PI * 2); g.fill(); }
+    g.strokeStyle = "rgba(160,120,90,.35)"; g.lineWidth = 3; g.setLineDash([10, 10]);
+    g.beginPath(); g.arc(cx, cy, w / 2 - 14, 0, Math.PI * 2); g.stroke();
+  });
+  add(room, new THREE.CircleGeometry(2.55, 64), mat("#ffffff", { map: rugTex, roughness: 1 }), [CENTER.x, 0.005, CENTER.z], { rot: [-Math.PI / 2, 0, 0], receive: true, cast: false });
+  // walls
+  const wallM = mat(WALL, { roughness: 1 });
+  add(room, new THREE.PlaneGeometry(16, 6), wallM, [0, 3, -4.2], { receive: true, cast: false });
+  add(room, new THREE.PlaneGeometry(16, 6), mat("#f3eadf", { roughness: 1 }), [-4.6, 3, 0], { rot: [0, Math.PI / 2, 0], receive: true, cast: false });
+  add(room, new THREE.PlaneGeometry(16, 6), mat("#f3eadf", { roughness: 1 }), [4.6, 3, 0], { rot: [0, -Math.PI / 2, 0], receive: true, cast: false });
+  add(room, new THREE.BoxGeometry(16, 0.14, 0.05), mat("#fbf7f1"), [0, 0.07, -4.17], { cast: false });
+  // window with sky
+  const WINDOW_POS = new THREE.Vector3(1.5, 1.95, -4.15);
+  const sky = canvasTex(256, 256, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, "#9fcbe8"); gr.addColorStop(0.7, "#d9ecf5"); gr.addColorStop(1, "#c9e2c3");
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    g.fillStyle = "rgba(255,255,255,.85)"; [[60, 70, 30], [90, 62, 24], [180, 110, 26], [205, 104, 20]].forEach(([x, y, r]) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); });
+    g.fillStyle = "#9ec79a"; g.beginPath(); g.ellipse(70, 250, 110, 50, 0, 0, Math.PI * 2); g.fill(); g.fillStyle = "#8bbb86"; g.beginPath(); g.ellipse(210, 255, 90, 45, 0, 0, Math.PI * 2); g.fill();
+  });
+  add(room, new THREE.PlaneGeometry(1.7, 1.5), new THREE.MeshBasicMaterial({ map: sky }), [WINDOW_POS.x, WINDOW_POS.y, -4.19], { cast: false });
+  const frameM = mat("#fbf8f3", { roughness: 0.6 });
+  [[0, 0.78, 1.86, 0.08], [0, -0.78, 1.86, 0.1], [-0.89, 0, 0.08, 1.64], [0.89, 0, 0.08, 1.64], [0, 0, 0.05, 1.5], [0, 0, 1.7, 0.05]].forEach(([x, y, w, h]) =>
+    add(room, new THREE.BoxGeometry(w, h, 0.08), frameM, [WINDOW_POS.x + x, WINDOW_POS.y + y, -4.14], { cast: false }));
+  add(room, new THREE.BoxGeometry(2.1, 0.06, 0.22), frameM, [WINDOW_POS.x, WINDOW_POS.y - 0.83, -4.06]);
+  const curtainM = knitMat("#b9cdb4");
+  [-1.22, 1.22].forEach(dx => add(room, new THREE.BoxGeometry(0.42, 2.3, 0.08), curtainM, [WINDOW_POS.x + dx, WINDOW_POS.y - 0.1, -4.08], { scale: [1, 1, 1] }));
+  // bookshelf
+  const shelf = new THREE.Group(); shelf.position.set(-2.7, 0, -3.95); room.add(shelf);
+  const woodM = mat("#c79f76", { roughness: 0.8 });
+  add(shelf, new THREE.BoxGeometry(1.5, 1.9, 0.38), woodM, [0, 0.95, 0]);
+  const bookColors = ["#e8a87c", "#85b8cb", "#d9c27a", "#c38d9e", "#9bc4a1", "#f0e2c8", "#7d8fb3"];
+  for (let r = 0; r < 3; r++) {
+    add(shelf, new THREE.BoxGeometry(1.36, 0.5, 0.3), mat("#f6eee3"), [0, 0.38 + r * 0.6, 0.06], { cast: false });
+    let x = -0.6;
+    while (x < 0.55) {
+      const bw = 0.06 + Math.random() * 0.07, bh = 0.32 + Math.random() * 0.13;
+      add(shelf, new THREE.BoxGeometry(bw, bh, 0.24), mat(bookColors[Math.floor(Math.random() * bookColors.length)], { roughness: 0.7 }), [x + bw / 2, 0.14 + r * 0.6 + bh / 2, 0.1]);
+      x += bw + 0.012;
+      if (Math.random() < 0.12) x += 0.12;
+    }
+  }
+  // plant
+  const plant = new THREE.Group(); plant.position.set(-4.05, 0, -3.75); room.add(plant);
+  add(plant, new THREE.CylinderGeometry(0.28, 0.22, 0.48, 28), mat("#d58b67"), [0, 0.24, 0]);
+  const leafM = mat("#7fb07a", { roughness: 0.7 });
+  for (let i = 0; i < 9; i++) {
+    const a = i / 9 * Math.PI * 2, tilt = 0.5 + Math.random() * 0.4;
+    const leaf = add(plant, new THREE.SphereGeometry(0.16, 16, 12), leafM, [Math.cos(a) * 0.18, 0.75 + Math.random() * 0.35, Math.sin(a) * 0.18], { scale: [0.55, 1.6, 0.25] });
+    leaf.rotation.set(Math.sin(a) * tilt, 0, -Math.cos(a) * tilt);
+  }
+  // lamp
+  const lamp = new THREE.Group(); lamp.position.set(3.9, 0, -3.3); room.add(lamp);
+  add(lamp, new THREE.CylinderGeometry(0.22, 0.25, 0.05, 24), mat("#3e3a36"), [0, 0.025, 0]);
+  add(lamp, new THREE.CylinderGeometry(0.025, 0.025, 1.55, 12), mat("#3e3a36"), [0, 0.8, 0]);
+  add(lamp, new THREE.CylinderGeometry(0.22, 0.34, 0.36, 28, 1, true), mat("#fff1d6", { emissive: "#ffd99a", emissiveIntensity: 0.55, side: THREE.DoubleSide }), [0, 1.62, 0], { cast: false });
+  const lampLight = new THREE.PointLight("#ffd9a0", 1.6, 6, 1.5); lampLight.position.set(3.9, 1.55, -3.3); room.add(lampLight);
+  // wall art
+  const art = (colors) => canvasTex(256, 320, (g, w, h) => {
+    g.fillStyle = "#fbf6ee"; g.fillRect(0, 0, w, h);
+    colors.forEach((c, i) => { g.fillStyle = c; g.beginPath(); g.arc(60 + (i * 83) % 150, 80 + i * 70, 50 + (i % 2) * 20, 0, Math.PI * 2); g.fill(); });
+  });
+  [[-0.6, 2.1, ["#f2b8a2", "#a8c8d8", "#e9d38f"]], [-1.25, 1.85, ["#b9d3b0", "#e8a7b9"]]].forEach(([x, y, cols]) => {
+    add(room, new THREE.BoxGeometry(0.62, 0.78, 0.04), mat("#d6b38c"), [x, y, -4.16], { cast: false });
+    add(room, new THREE.PlaneGeometry(0.54, 0.7), mat("#ffffff", { map: art(cols), roughness: 1 }), [x, y, -4.13], { cast: false });
+  });
+  // clock on the side wall
+  const clock = new THREE.Group(); clock.position.set(4.57, 2.3, -1.6); clock.rotation.y = -Math.PI / 2; room.add(clock);
+  add(clock, new THREE.CylinderGeometry(0.28, 0.28, 0.05, 40), mat("#fbf8f3"), [0, 0, 0], { rot: [Math.PI / 2, 0, 0], cast: false });
+  add(clock, new THREE.BoxGeometry(0.02, 0.17, 0.02), mat("#333"), [0, 0.07, 0.04], { cast: false });
+  add(clock, new THREE.BoxGeometry(0.13, 0.02, 0.02), mat("#333"), [0.05, 0, 0.04], { cast: false });
+  // low table with tissues and water, in the middle of the circle
+  const table = new THREE.Group(); table.position.copy(CENTER); room.add(table);
+  add(table, new THREE.CylinderGeometry(0.46, 0.46, 0.05, 40), woodM, [0, 0.33, 0], { receive: true });
+  add(table, new THREE.CylinderGeometry(0.06, 0.09, 0.31, 16), woodM, [0, 0.155, 0]);
+  add(table, new THREE.BoxGeometry(0.22, 0.1, 0.13), mat("#f4a7a0"), [-0.12, 0.405, 0.05]);
+  add(table, new THREE.SphereGeometry(0.06, 12, 8), mat("#ffffff"), [-0.12, 0.47, 0.05], { scale: [1, 0.8, 0.6] });
+  add(table, new THREE.CylinderGeometry(0.06, 0.07, 0.24, 20), mat("#cfe6ef", { transparent: true, opacity: 0.6, roughness: 0.1 }), [0.16, 0.475, -0.04]);
+  add(table, new THREE.CylinderGeometry(0.04, 0.035, 0.08, 16), mat("#ffffff"), [0.2, 0.395, 0.17]);
+
+  /* ---------- lights ---------- */
+  scene.add(new THREE.HemisphereLight("#fff6ea", "#cdb79a", 1.15));
+  const sun = new THREE.DirectionalLight("#fff0dc", 1.6);
+  sun.position.set(2.2, 5.5, 2.8); sun.target.position.copy(CENTER);
+  sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.radius = 4; sun.shadow.bias = -0.0005;
+  Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near: 0.5, far: 14 });
+  scene.add(sun, sun.target);
+  const windowLight = new THREE.PointLight("#dcefff", 1.2, 7, 1.6); windowLight.position.set(WINDOW_POS.x, WINDOW_POS.y, -3.4); scene.add(windowLight);
+
+  /* ---------- members ---------- */
+  const R = 0.32;               // head radius
+  const HEAD_SCALE = 1.25;      // big toy-like heads
+  const HEAD_Y = 0.34;          // head centre above the neck pivot
+  const PIVOT_Y = 0.76;         // neck pivot above the floor
+  const LOOKS = {
+    ravi:    { skin: "#a8714e", hair: "#2a1c15", top: "#e8925a", brow: "#2a1c15" },
+    meiling: { skin: "#f3dac6", hair: "#1c1a1e", top: "#8fb7e0", brow: "#1c1a1e" },
+    daniel:  { skin: "#e6c09d", hair: "#17171a", top: "#465a8a", brow: "#17171a" },
+    aisyah:  { skin: "#dcac84", hijab: "#d98aa5", top: "#efe1d1", brow: "#3a2620" },
+    farah:   { skin: "#eecbb0", hair: "#3b2a21", top: "#86c4a5", brow: "#3b2a21" },
+  };
+  // a point on the face surface (head-centre coordinates)
+  const onFace = (x, y, off = 0) => new THREE.Vector3(x, y, Math.sqrt(Math.max(0, R * R - x * x - y * y)) + off);
+  const faceOut = (mesh, p) => { mesh.position.copy(p); mesh.lookAt(p.clone().multiplyScalar(2)); };
+  const shell = (parent, r, phiStart, phiLen, thStart, thLen, material) =>
+    add(parent, new THREE.SphereGeometry(r, 48, 32, phiStart, phiLen, thStart, thLen), material, [0, 0, 0]);
+  const PI = Math.PI;
+
+  function mouthGeo(emotion) {
+    let curve, w = 0.045;
+    const flat = (c, ww = w) => new THREE.QuadraticBezierCurve3(new THREE.Vector3(-ww, 0, 0), new THREE.Vector3(0, c, 0.004), new THREE.Vector3(ww, 0, 0));
+    switch (emotion) {
+      case "warm": case "hopeful": curve = flat(-0.032); break;
+      case "amused": curve = flat(-0.045, 0.05); break;
+      case "sad": curve = flat(0.03, 0.04); break;
+      case "irritated": case "defensive": curve = flat(0.014, 0.04); break;
+      case "anxious": curve = new THREE.CubicBezierCurve3(new THREE.Vector3(-w, 0, 0), new THREE.Vector3(-w / 3, 0.018, 0.004), new THREE.Vector3(w / 3, -0.018, 0.004), new THREE.Vector3(w, 0, 0)); break;
+      case "withdrawn": case "guarded": curve = flat(0.004, 0.026); break;
+      case "bored": curve = flat(0.006, 0.034); break;
+      default: curve = flat(-0.012);
+    }
+    return new THREE.TubeGeometry(curve, 16, 0.0085, 8, false);
+  }
+  const BROW_TILT = { sad: 0.38, anxious: 0.22, irritated: -0.38, defensive: -0.3, guarded: -0.1, withdrawn: 0.18, warm: 0.05, hopeful: 0.12, amused: -0.05, bored: 0, calm: 0 };
+  const BROW_LIFT = { anxious: 0.012, hopeful: 0.008, amused: 0.01, sad: 0.004, irritated: -0.01, defensive: -0.008, bored: -0.006 };
+  const EYE_SQUINT = { warm: 0.62, amused: 0.5, hopeful: 0.8, bored: 0.55, withdrawn: 0.55, irritated: 0.75, defensive: 0.8 };
+
+  function buildMember(m, angle) {
+    const L = LOOKS[m.id];
+    const root = new THREE.Group();
+    root.position.set(CENTER.x + Math.sin(angle) * RADIUS, 0, CENTER.z + Math.cos(angle) * RADIUS);
+    root.userData.baseYaw = Math.atan2(CENTER.x - root.position.x, CENTER.z - root.position.z);
+    root.rotation.y = root.userData.baseYaw;
+    root.userData.id = m.id;
+    scene.add(root);
+
+    // floor cushion
+    add(root, new THREE.CylinderGeometry(0.43, 0.45, 0.24, 40), knitMat(shade(m.color, 0.12)), [0, 0.12, 0], { receive: true });
+    add(root, new THREE.TorusGeometry(0.43, 0.035, 12, 48), knitMat(shade(m.color, 0.05)), [0, 0.24, 0], { rot: [PI / 2, 0, 0] });
+
+    const body = new THREE.Group(); root.add(body);
+    const breath = new THREE.Group(); body.add(breath);
+    const topM = knitMat(L.top);
+    add(breath, new THREE.SphereGeometry(0.36, 40, 28), topM, [0, 0.47, 0], { scale: [1, 0.68, 0.76] });
+    add(breath, new THREE.CylinderGeometry(0.14, 0.16, 0.13, 28), topM, [0, 0.71, 0]);   // turtleneck collar
+    add(breath, new THREE.CylinderGeometry(0.1, 0.1, 0.1, 20), skinMat(L.skin), [0, 0.78, 0]);
+
+    const head = new THREE.Group(); head.position.y = PIVOT_Y; breath.add(head);
+    const hc = new THREE.Group(); hc.position.y = HEAD_Y; hc.scale.setScalar(HEAD_SCALE); head.add(hc);   // head centre
+    const skin = skinMat(L.skin);
+    add(hc, new THREE.SphereGeometry(R, 56, 40), skin, [0, 0, 0]);
+    [-1, 1].forEach(s => add(hc, new THREE.SphereGeometry(1, 20, 14), skin, [s * 0.312, -0.01, -0.01], { scale: [0.045, 0.072, 0.035] }));
+    const nose = add(hc, new THREE.SphereGeometry(0.02, 14, 10), skinMat(shade(L.skin, -0.04)), [0, 0, 0]); faceOut(nose, onFace(0, -0.045, -0.006));
+
+    const eyeM = mat("#141216", { roughness: 0.25 }), shineM = new THREE.MeshBasicMaterial({ color: "#ffffff" });
+    const eyes = [-1, 1].map(s => {
+      const g = new THREE.Group(); faceOut(g, onFace(s * 0.105, 0.0, -0.006)); hc.add(g);
+      const e = add(g, new THREE.SphereGeometry(1, 24, 16), eyeM, [0, 0, 0], { scale: [0.036, 0.048, 0.02], cast: false });
+      add(e, new THREE.SphereGeometry(0.28, 10, 8), shineM, [0.32, 0.38, 0.75], { cast: false });
+      return e;
+    });
+    const brows = [-1, 1].map(s => {
+      const g = new THREE.Group(); faceOut(g, onFace(s * 0.108, 0.098, -0.004)); hc.add(g);
+      const tilt = new THREE.Group(); g.add(tilt);
+      add(tilt, new THREE.CapsuleGeometry(0.0095, 0.048, 4, 8), mat(L.brow, { roughness: 0.9 }), [0, 0, 0], { rot: [0, 0, PI / 2], cast: false });
+      tilt.userData.side = s; return tilt;
+    });
+    const blushM = new THREE.MeshBasicMaterial({ color: "#f39c97", transparent: true, opacity: 0.42 });
+    const blush = [-1, 1].map(s => { const b = add(hc, new THREE.SphereGeometry(1, 20, 14), blushM, [0, 0, 0], { scale: [0.055, 0.032, 0.01], cast: false }); faceOut(b, onFace(s * 0.168, -0.062, -0.008)); return b; });
+    const mouth = new THREE.Group(); faceOut(mouth, onFace(0, -0.112, -0.004)); hc.add(mouth);
+    const lineM = mat("#3a2422", { roughness: 0.6 });
+    const mouthLine = add(mouth, mouthGeo("calm"), lineM, [0, 0, 0], { cast: false });
+    const mouthOpen = add(mouth, new THREE.SphereGeometry(1, 20, 14), mat("#5a2a2a", { roughness: 0.6 }), [0, -0.004, 0], { scale: [0.028, 0.02, 0.01], cast: false });
+    mouthOpen.visible = false;
+
+    // hair and accessories
+    if (m.id === "meiling") {
+      const hm = hairMat(L.hair);
+      shell(hc, 0.345, 0, 2 * PI, 0, 0.36 * PI, hm);
+      shell(hc, 0.353, PI / 2 - 0.9, 1.8, 0.18 * PI, 0.2 * PI, hm);                     // bangs
+      shell(hc, 0.368, PI / 2 + 0.62, 2 * PI - 1.24, 0.12 * PI, 0.64 * PI, hm);         // bob
+      const gm = mat("#5b3b2b", { roughness: 0.4 });
+      [-1, 1].forEach(s => { const r = add(hc, new THREE.TorusGeometry(0.058, 0.0075, 10, 32), gm, [0, 0, 0], { cast: false }); faceOut(r, onFace(s * 0.105, 0.0, 0.03)); });
+      add(hc, new THREE.CylinderGeometry(0.006, 0.006, 0.06, 8), gm, onFace(0, 0.008, 0.035).toArray(), { rot: [0, 0, PI / 2], cast: false });
+    } else if (m.id === "ravi") {
+      const hm = hairMat(L.hair);
+      shell(hc, 0.343, 0, 2 * PI, 0, 0.33 * PI, hm);
+      shell(hc, 0.35, PI / 2 + 1.05, 2 * PI - 2.1, 0.2 * PI, 0.42 * PI, hm);
+      const up = new THREE.Vector3(0, 1, 0);
+      [[0.15, 1.2], [0.2, 1.75], [0.18, 2.35], [0.28, 1.5], [0.27, 2.1], [0.1, 0.4], [0.12, 3.0], [0.3, 0.9], [0.3, 2.6], [0.05, 1.9]].forEach(([th, ph]) => {
+        const t = th * PI, n = new THREE.Vector3(-Math.cos(ph) * Math.sin(t), Math.cos(t), Math.sin(ph) * Math.sin(t));
+        const c = add(hc, new THREE.ConeGeometry(0.06, 0.15, 10), hm, n.clone().multiplyScalar(0.36).toArray());
+        c.quaternion.setFromUnitVectors(up, n.clone().add(new THREE.Vector3(0, 0, 0.35)).normalize());
+      });
+      [-1, 1].forEach(s => { add(breath, new THREE.CylinderGeometry(0.008, 0.008, 0.16, 8), mat("#f7efe6"), [s * 0.06, 0.6, 0.27], { rot: [0.35, 0, 0] }); add(breath, new THREE.SphereGeometry(0.015, 10, 8), mat("#f7efe6"), [s * 0.06, 0.52, 0.3]); });   // hoodie strings
+      add(breath, new THREE.TorusGeometry(0.2, 0.07, 14, 36, PI), knitMat(shade(L.top, -0.06)), [0, 0.7, -0.08], { rot: [-0.25, 0, 0] });   // hood behind the neck
+    } else if (m.id === "daniel") {
+      const hm = hairMat(L.hair);
+      shell(hc, 0.342, 0, 2 * PI, 0, 0.35 * PI, hm);
+      shell(hc, 0.349, PI / 2 + 1.05, 2 * PI - 2.1, 0.2 * PI, 0.45 * PI, hm);
+      add(hc, new THREE.SphereGeometry(0.2, 32, 20), hm, [0.05, 0.27, 0.09], { scale: [1.1, 0.42, 0.95], rot: [0.25, 0, -0.25] });
+      const gm = mat("#1d1d22", { roughness: 0.35 });
+      [-1, 1].forEach(s => { const g = add(hc, new THREE.TorusGeometry(0.066, 0.008, 6, 4), gm, [0, 0, 0], { cast: false }); faceOut(g, onFace(s * 0.105, 0.0, 0.032)); g.rotateZ(PI / 4); });
+      add(hc, new THREE.CylinderGeometry(0.006, 0.006, 0.05, 8), gm, onFace(0, 0.01, 0.037).toArray(), { rot: [0, 0, PI / 2], cast: false });
+      [-1, 1].forEach(s => add(breath, new THREE.BoxGeometry(0.1, 0.012, 0.08), mat("#f7f5f0"), [s * 0.07, 0.7, 0.11], { rot: [0.5, 0, s * -0.45] }));
+    } else if (m.id === "aisyah") {
+      const hj = mat(L.hijab, { roughness: 0.95, side: THREE.DoubleSide, bumpMap: KNIT, bumpScale: 0.3 });
+      shell(hc, 0.37, 0, 2 * PI, 0, 0.33 * PI, hj);
+      shell(hc, 0.375, PI / 2 + 0.72, 2 * PI - 1.44, 0.22 * PI, 0.74 * PI, hj);
+      add(breath, new THREE.CylinderGeometry(0.3, 0.48, 0.36, 48, 1, true), hj, [0, 0.8, 0], {});
+      add(breath, new THREE.SphereGeometry(0.48, 40, 20, 0, 2 * PI, PI / 2, 0.25 * PI), hj, [0, 0.62, 0], { scale: [1, 0.5, 0.82] });
+      add(hc, new THREE.SphereGeometry(0.018, 12, 8), mat("#e3c26f", { roughness: 0.3, metalness: 0.4 }), [0.27, -0.14, 0.2]);
+    } else if (m.id === "farah") {
+      const hm = hairMat(L.hair);
+      shell(hc, 0.344, 0, 2 * PI, 0, 0.3 * PI, hm);
+      shell(hc, 0.352, PI / 2 + 0.75, 2 * PI - 1.5, 0.15 * PI, 0.52 * PI, hm);
+      shell(hc, 0.35, PI / 2 - 0.15, 1.0, 0.16 * PI, 0.18 * PI, hm);                   // side-swept fringe
+      add(hc, new THREE.SphereGeometry(0.13, 28, 20), hm, [0, 0.2, -0.29]);            // bun
+      add(hc, new THREE.TorusGeometry(0.08, 0.02, 10, 24), mat("#86c4a5"), [0, 0.15, -0.25], { rot: [0.9, 0, 0] });
+      const sc = knitMat("#6fa98c");
+      add(breath, new THREE.TorusGeometry(0.19, 0.07, 14, 36), sc, [0, 0.73, 0], { rot: [PI / 2, 0, 0] });
+    }
+
+    // trust ring and markers on the floor
+    const ringBg = add(root, new THREE.RingGeometry(0.52, 0.58, 64), new THREE.MeshBasicMaterial({ color: "#000000", transparent: true, opacity: 0.08 }), [0, 0.012, 0], { rot: [-PI / 2, 0, 0], cast: false });
+    const trustRing = add(root, new THREE.RingGeometry(0.52, 0.58, 64, 1, 0, 0.01), new THREE.MeshBasicMaterial({ color: "#3f9a6b" }), [0, 0.014, 0], { rot: [-PI / 2, 0, 0], cast: false });
+    const marker = add(root, new THREE.RingGeometry(0.62, 0.68, 64), new THREE.MeshBasicMaterial({ color: "#3b6ea8", transparent: true, opacity: 0 }), [0, 0.016, 0], { rot: [-PI / 2, 0, 0], cast: false });
+    root.traverse(o => { o.userData.memberId = m.id; });
+
+    return { m, root, body, breath, head, hc, eyes, brows, blush, blushM, mouthLine, mouthOpen, trustRing, marker, ringBg,
+      emotion: null, trust: null, yaw: 0, bodyYaw: 0, pitch: 0, glanceUntil: 0, glanceAt: null, nextGlance: 2 + Math.random() * 4, nextBlink: 1 + Math.random() * 3, blinkT: 0 };
+  }
+
+  // seat order matches the 2D circle: Ravi front-left, Mei Ling back-left, Daniel back, Aisyah back-right, Farah front-right
+  const ANGLES = { ravi: -1.25, meiling: -2.35, daniel: PI, aisyah: 2.35, farah: 1.25 };
+  const H = Object.fromEntries(MEMBERS.map(m => [m.id, buildMember(m, ANGLES[m.id])]));
+
+  /* ---------- relationship ribbons on the rug ---------- */
+  const ribbons = {};
+  function ribbon(key) {
+    if (ribbons[key]) return ribbons[key];
+    const [a, b] = key.split("|"), pa = H[a].root.position, pb = H[b].root.position;
+    const mesh = add(scene, new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: "#3f9a6b", transparent: true, opacity: 0.5, depthWrite: false }), [0, 0.02, 0], { cast: false });
+    mesh.rotation.x = -PI / 2;
+    const mid = pa.clone().add(pb).multiplyScalar(0.5), d = pb.clone().sub(pa);
+    mesh.position.set(mid.x, 0.02, mid.z);
+    mesh.rotation.z = Math.atan2(d.z, d.x) * -1;
+    mesh.scale.set(d.length() - 1.1, 0.06, 1);
+    return (ribbons[key] = mesh);
+  }
+
+  /* ---------- camera fitting ---------- */
+  function fit() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    const half = 2.45, tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const d = Math.max(4.2, half / (tan * camera.aspect));
+    camera.position.set(0, 1.55 + d * 0.16, CENTER.z + d);
+    camera.lookAt(CENTER.x, 0.72, CENTER.z - 0.35);
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(fit).observe(stage); fit();
+
+  /* ---------- picking ---------- */
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  renderer.domElement.addEventListener("click", e => {
+    const r = renderer.domElement.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObjects(Object.values(H).map(h => h.root), true)[0];
+    const id = hit && hit.object.userData.memberId;
+    if (id) setAddressed(S.addressed === id ? null : id);
+  });
+  renderer.domElement.addEventListener("pointermove", e => {
+    const r = renderer.domElement.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    renderer.domElement.style.cursor = ray.intersectObjects(Object.values(H).map(h => h.root), true).length ? "pointer" : "default";
+  });
+
+  /* ---------- per-frame behaviour ---------- */
+  const tmp = new THREE.Vector3(), headWorld = id => H[id].root.position.clone().setY(PIVOT_Y + HEAD_Y + 0.02);
+  function lastSpeaker() {
+    for (let i = S.transcript.length - 1; i >= 0; i--) { const w = S.transcript[i].who; if (w === "facilitator" || BYID[w]) return w; }
+    return null;
+  }
+  // Where should this member be looking right now?
+  function gazeTarget(h, now) {
+    const id = h.m.id, st = S.members[id];
+    const el = document.getElementById("m-" + id);
+    const speaking = el.classList.contains("speaking");
+    const speaker = MEMBERS.find(o => document.getElementById("m-" + o.id).classList.contains("speaking"));
+    let who;
+    if (speaking) who = st.gaze || "facilitator";
+    else if (st.posture === "looking_down" || st.emotion === "withdrawn" || (st.emotion === "sad" && (now % 9) < 6)) who = "floor";
+    else if (st.gaze === "window" || st.emotion === "bored") who = "window";
+    else if (h.glanceUntil > now && h.glanceAt) who = h.glanceAt;
+    else if (speaker && speaker.id !== id) who = speaker.id;
+    else { const ls = lastSpeaker(); who = ls && ls !== id ? ls : (st.gaze || "facilitator"); }
+    if (who === "floor") return { point: h.root.position.clone().add(tmp.set(Math.sin(h.root.userData.baseYaw), 0, Math.cos(h.root.userData.baseYaw)).multiplyScalar(0.8)), down: true };
+    if (who === "window") return { point: WINDOW_POS.clone() };
+    if (BYID[who] && who !== id) return { point: headWorld(who) };
+    return { point: camera.position.clone().setY(1.4) };
+  }
+  const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+  const damp = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
+  const nameplatePoint = new THREE.Vector3();
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const t = now / 1000;
+    for (const h of Object.values(H)) {
+      const id = h.m.id, st = S.members[id], el = document.getElementById("m-" + id);
+      const speaking = el.classList.contains("speaking");
+      // expression
+      if (h.emotion !== st.emotion) {
+        h.emotion = st.emotion;
+        h.mouthLine.geometry.dispose(); h.mouthLine.geometry = mouthGeo(st.emotion);
+        h.blushM.opacity = ["warm", "hopeful", "amused", "anxious"].includes(st.emotion) ? 0.6 : st.emotion === "sad" ? 0.5 : 0.35;
+      }
+      h.brows.forEach(b => {
+        // inner end up for sad/anxious, down for irritated/defensive
+        b.rotation.z = damp(b.rotation.z, (BROW_TILT[st.emotion] || 0) * -b.userData.side, 8, dt);
+        b.position.y = damp(b.position.y, BROW_LIFT[st.emotion] || 0, 8, dt);
+      });
+      // blink
+      h.nextBlink -= dt;
+      if (h.nextBlink <= 0) { h.blinkT = 0.13; h.nextBlink = 2.5 + Math.random() * 4; }
+      h.blinkT = Math.max(0, h.blinkT - dt);
+      const lid = (st.posture === "looking_down" ? 0.55 : 1) * (EYE_SQUINT[st.emotion] || 1) * (h.blinkT > 0 ? 0.1 : 1);
+      h.eyes.forEach(e => { e.scale.y = damp(e.scale.y, 0.048 * lid, 20, dt); });
+      // mouth while talking
+      h.mouthLine.visible = !speaking; h.mouthOpen.visible = speaking;
+      if (speaking) h.mouthOpen.scale.y = 0.008 + Math.abs(Math.sin(t * 13 + h.root.position.x)) * 0.02;
+      // occasional glances at other members when relaxed
+      h.nextGlance -= dt;
+      if (h.nextGlance <= 0) {
+        h.nextGlance = 3 + Math.random() * 5;
+        if (!speaking && ["calm", "warm", "amused", "hopeful", "anxious"].includes(st.emotion) && Math.random() < 0.45) {
+          const others = MEMBERS.filter(o => o.id !== id); h.glanceAt = others[Math.floor(Math.random() * others.length)].id; h.glanceUntil = t + 1.1 + Math.random();
+        }
+      }
+      // turn toward the gaze target: the body takes some of the turn, the head the rest
+      const gt = gazeTarget(h, t);
+      const from = h.root.position.clone().setY(PIVOT_Y + HEAD_Y);
+      const d = gt.point.clone().sub(from);
+      let rel = wrap(Math.atan2(d.x, d.z) - h.root.userData.baseYaw);
+      if (st.posture === "turned_away" && !speaking) rel = (h.root.position.x < 0 ? -1 : 1) * 1.15;
+      const bodyTarget = THREE.MathUtils.clamp(rel * 0.4, -0.7, 0.7);
+      const headTarget = THREE.MathUtils.clamp(rel - bodyTarget, -1.15, 1.15);
+      let pitchTarget = THREE.MathUtils.clamp(Math.atan2(-d.y, Math.hypot(d.x, d.z)), -0.35, 0.75);
+      if (gt.down) pitchTarget = 0.62;
+      h.bodyYaw = damp(h.bodyYaw, bodyTarget, 3, dt);
+      h.yaw = damp(h.yaw, headTarget, 5, dt);
+      h.pitch = damp(h.pitch, pitchTarget, 4, dt);
+      h.body.rotation.y = h.bodyYaw;
+      h.head.rotation.y = h.yaw;
+      h.head.rotation.x = h.pitch + (speaking ? Math.sin(t * 5) * 0.03 : 0);
+      h.head.rotation.z = Math.sin(t * 0.6 + h.root.position.x * 3) * 0.035 + (st.emotion === "anxious" ? Math.sin(t * 3) * 0.015 : 0);
+      // posture
+      const lean = st.posture === "leaning_in" ? 0.14 : st.posture === "arms_crossed" ? -0.08 : 0;
+      h.body.rotation.x = damp(h.body.rotation.x, lean, 3, dt);
+      h.breath.scale.y = 1 + Math.sin(t * 1.7 + h.root.position.z * 2) * 0.012;
+      // trust ring
+      if (h.trust !== st.trust) {
+        h.trust = st.trust;
+        h.trustRing.geometry.dispose();
+        h.trustRing.geometry = new THREE.RingGeometry(0.52, 0.58, 64, 1, PI / 2, Math.max(0.01, (st.trust / 10) * 2 * PI));
+        h.trustRing.material.color.set(st.trust >= 7 ? "#3f9a6b" : st.trust >= 4 ? "#d9a33a" : "#c9503f");
+      }
+      const pending = el.classList.contains("pending"), addressed = S.addressed === id;
+      h.marker.material.opacity = addressed ? 0.85 : pending ? 0.35 + Math.sin(t * 6) * 0.25 : speaking ? 0.5 : 0;
+      h.marker.material.color.set(speaking ? m_color(id) : "#3b6ea8");
+      // nameplate and bubbles follow the head on screen
+      nameplatePoint.copy(h.root.position).setY(PIVOT_Y + HEAD_Y + R * HEAD_SCALE + 0.16);
+      nameplatePoint.project(camera);
+      el.style.left = ((nameplatePoint.x + 1) / 2 * 100) + "%";
+      el.style.top = ((1 - nameplatePoint.y) / 2 * 100) + "%";
+    }
+    // relationship ribbons
+    for (const [k, v] of Object.entries(S.rel)) {
+      const rb = ribbon(k);
+      rb.visible = S.lines && v !== 0;
+      if (rb.visible) { rb.material.color.set(v > 0 ? "#3f9a6b" : "#c9503f"); rb.material.opacity = 0.25 + Math.abs(v) * 0.17; rb.scale.y = 0.03 + Math.abs(v) * 0.025; }
+    }
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  const m_color = id => BYID[id].color;
+  requestAnimationFrame(frame);
+  window.Stage3D = { scene, camera, heads: H };
+})();
+</script>
+
 </body>
 </html>
