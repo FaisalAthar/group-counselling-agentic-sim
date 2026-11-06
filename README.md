@@ -1,6 +1,8 @@
 # Group Circle Simulator (Stage 1 prototype)
 
-A training simulation for trainee group counsellors. The trainee facilitates a five-member support group ("Coping with University Pressure", session 3 of 8). The other roles are AI agents, and the page shows the decisions they make.
+A training simulation for trainee group counsellors. The trainee facilitates session 3 of 8 of a closed support group. The other roles are AI agents, and the page shows the decisions they make.
+
+**Setting up a session:** choose a theme (academic issues with university students aged 19–23, marital issues with married people aged 32–38 attending without their spouses, or work issues with employees aged 27–33), the number of members (3 to 6), and for each seat a ready-made character, a random one, or one built from a personality (dominates the talk, silent, sceptic, rescuer, hurting/tearful, anxious worrier, blames others) and one of the theme's backgrounds. Each background has a public line and a private story the member only shares once trust is high. The look (hair, hijab, glasses, clothes) is generated for each member.
 
 - **Members (5 agents):** Ravi (dominates the talk), Mei Ling (silent member), Daniel (sceptic), Aisyah (rescuer) and Farah (grieving). Each has a public profile and a hidden story. A member shares their hidden story only once their trust in the group is high.
 - **Director (1 agent):** after each facilitator move it labels the counselling skill used, sets the group stage (forming, storming, norming, working), picks who speaks next with a private instruction, and notes silent trust changes in members who don't speak.
@@ -55,6 +57,7 @@ The version number is shown next to the title. Each build is also saved as a cop
 
 | Version | What changed |
 |---|---|
+| v1.8 | Setup screen: choose the theme (academic, marital or work issues, each with members of similar age), the number of members (3 to 6), and for each seat a ready-made character, a random one, or one built from a personality and a background |
 | v1.7 | Stylized 3D view: vinyl-toy heads with their own looks in a counselling room; heads turn to whoever they are listening or talking to, look at the floor when sad and out of the window when bored; the 2D circle is used if WebGL is not available |
 | v1.6 | Version number shown next to the title; every build saved in `versions/` |
 | v1.5 | The group keeps talking among themselves after answering you; you can jump in at any time; a setting for how much the group talks on its own |

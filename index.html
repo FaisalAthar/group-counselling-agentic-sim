@@ -163,6 +163,17 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
 .modal .box{background:var(--surface);color:var(--ink);border-radius:16px;max-width:760px;width:100%;max-height:calc(100vh - 32px);overflow:auto;padding:20px 22px;box-shadow:var(--shadow)}
 .modal h2{margin:0 0 6px;font-size:20px}
 .modal h3{margin:16px 0 6px;font-size:15px}
+.setup-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+.setup-row select,.seat select,.seat input{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);font-size:13px}
+.seat{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px}
+.seat .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.seat .top select{flex:1;min-width:200px}
+.seat .build{display:flex;gap:6px;flex-wrap:wrap}
+.seat .build select{flex:1;min-width:150px}
+.seat .build input{width:130px}
+.seat .desc{font-size:12.5px;color:var(--ink-2)}
+.seat .sw{width:14px;height:14px;border-radius:50%;flex:none}
+#themePick label{min-width:180px}
 .cast{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
 .cast .c{border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;display:flex;gap:8px}
 .cast .sw{width:14px;height:14px;border-radius:50%;flex:none;margin-top:3px}
@@ -218,6 +229,7 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
         <span class="stage-badge">Group stage: <b id="stageName">forming</b></span>
         <span class="stage-badge">Turn <b id="turnNo">0</b></span>
         <span class="stage-badge" id="modeBadge">Mode: -</span>
+        <span class="stage-badge" id="groupBadge" title="Theme of this group">-</span>
       </div>
       <div id="stage">
         <div class="rug"></div>
@@ -264,16 +276,25 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
 <!-- Start modal -->
 <div class="modal" id="startModal">
   <div class="box">
-    <h2>“Coping with University Pressure”, session 3 of 8</h2>
-    <p style="margin:0 0 10px">You are facilitating a support group at a university counselling centre. Five students are in the circle, and each has a private story they only share if the group feels safe. AI agents play each member, a <b>director</b> agent decides who speaks and how the group develops, and an <b>observer</b> gives you a debrief at the end.</p>
-    <h3>The group</h3>
-    <div class="cast" id="castList"></div>
+    <h2>Set up your group</h2>
+    <p style="margin:0 0 10px">You will facilitate session 3 of a closed support group. AI agents play each member, a <b>director</b> agent decides who speaks and how the group develops, and an <b>observer</b> gives you a debrief at the end. Each member has a private story they only share if the group feels safe.</p>
+    <h3>Theme</h3>
+    <div class="radio" id="themePick"></div>
+    <div class="setup-row">
+      <h3 style="margin:0">Members</h3>
+      <label class="hint">How many <select id="countPick"><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+      <span class="spacer"></span>
+      <button class="tbtn" id="allRandomBtn" type="button">Make all random</button>
+      <button class="tbtn" id="allPresetBtn" type="button">Use ready-made</button>
+    </div>
+    <p class="hint" style="margin:4px 0 8px">For each seat, pick a ready-made character, a random one, or build one from a personality and a background. Ages stay close together within the theme.</p>
+    <div id="seats"></div>
     <h3>How to run the AI</h3>
     <div class="radio">
       <label><input type="radio" name="mode" value="llm" checked><span><b>My model servers</b><br><span class="hint">Uses the Lemonade endpoints in Settings. The page must be open on a device that can reach them (e.g. on your Tailscale network).</span></span></label>
       <label><input type="radio" name="mode" value="demo"><span><b>Demo mode (no AI)</b><br><span class="hint">A scripted stand-in for the agents, using simple rules. Use it to try the interface offline.</span></span></label>
     </div>
-    <p class="note" style="margin-top:12px"><b>Content note.</b> The members talk about loneliness, grief, family pressure and academic failure. This is a training simulation with fictional people: it is not counselling and must not be used with real clients. You can pause at any time.</p>
+    <p class="note" style="margin-top:12px" id="contentNote"></p>
     <div class="actions">
       <button class="btn secondary" id="startSettingsBtn">Settings</button>
       <button class="btn" id="startBtn">Start session</button>
@@ -313,7 +334,7 @@ main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:1
    CONFIG
    ============================================================ */
 /* Bump this on every build, and save a copy to versions/ (see CLAUDE.md). */
-const APP_VERSION = "v1.7";
+const APP_VERSION = "v1.8";
 const DEFAULTS = {
   memberEndpoint: "https://lsctdscoma003.tailfeee99.ts.net/v1/chat/completions",
   memberModel: "qwen2.5-14b-instruct",
@@ -330,49 +351,296 @@ for (const k of Object.keys(DEFAULTS)) { const v = store(k); config[k] = v !== n
    Public info is shown to the trainee; hidden info only goes to the
    member's own agent (and is revealed in the debrief).
    ============================================================ */
-const GROUP = {
-  title: "Coping with University Pressure",
-  setting: "A closed support group of five university students at a Malaysian university counselling centre. Session 3 of 8, 60 minutes. Group norms agreed in session 1: confidentiality, speak for yourself, you may pass.",
-};
-const MEMBERS = [
-  { id:"ravi", name:"Ravi", role:"Dominates the talk", color:"#e8925a", trust:5,
-    pub:"Second-year engineering student who works part-time at his uncle's restaurant.",
-    hidden:"Works 30 hours a week to pay his younger sister's tuition. Talks a lot and jokes so that nobody asks how he really is. Afraid that if he stops, he will break down.",
-    style:"Talkative and fast, makes jokes, goes off on long tangents, and jumps in when others pause. Uses light Malaysian English ('lah', 'can').",
-    opens:"the facilitator gently names the feeling under the jokes, or kindly holds him back and later returns to him",
-    shuts:"he is cut off abruptly, mocked, or ignored after being blocked",
-    voice:{pitch:.9, rate:1.12} },
-  { id:"meiling", name:"Mei Ling", role:"Silent member", color:"#8fb7e0", trust:3,
-    pub:"First-year accounting student from Sabah, living away from home for the first time.",
-    hidden:"Very homesick and lonely, and has made no friends this semester. Worries she is a burden. Speaks only when invited warmly and given space, and says very little at first.",
+/* ============================================================
+   THE GROUP: themes, personalities and backgrounds
+   A member = a personality (how they behave in a group) + a background
+   (their situation and private story) + a name, age and look.
+   The trainee picks the theme, the number of members, and for each seat
+   a ready-made character, a random one, or one they build from a
+   personality and a background.
+   ============================================================ */
+const ARCHETYPES = {
+  dominator: { label:"Dominates the talk", trust:5, eager:1, event:"interrupt", rate:1.12,
+    style:"Talkative and fast, makes jokes, goes off on long tangents, and jumps in when others pause.",
+    opens:"the facilitator gently names the feeling under all the talking, or kindly holds them back and later comes back to them",
+    shuts:"they are cut off abruptly, mocked, or ignored after being held back",
+    tendency:"jumps in and takes over whenever there is a pause, unless recently held back",
+    low:["Haha, okay, I'll keep it short. Everything's fine, just tired. Same as everyone, right?","You cut me off last time, so... I'll just listen, I guess.","Can we not make it a big thing? I'm good, really."],
+    eventLines:["Oh, that's like me! Last week, right, the exact same thing happened and then...","Can I jump in? Because this happened to me too, it's crazy."],
+    emo:{ low:"guarded", mid:"amused", high:"sad" }, lowPosture:"turned_away" },
+  silent: { label:"Silent member", trust:3, eager:7, rate:0.9,
     style:"Very short, quiet answers. Hesitant. Says sorry often.",
-    opens:"she is invited by name gently, given time, and protected from interruptions",
-    shuts:"she is put on the spot sharply, interrupted, or talked over by Ravi",
-    voice:{pitch:1.3, rate:.9} },
-  { id:"daniel", name:"Daniel", role:"Sceptic", color:"#9a8fd0", trust:3,
-    pub:"Final-year law student. He attends because his scholarship requires it.",
-    hidden:"Under heavy pressure to get a training contract. Failed an important interview last month and told nobody. Challenges the group so he does not have to be vulnerable.",
+    opens:"they are invited by name gently, given time, and protected from interruptions",
+    shuts:"they are put on the spot sharply, interrupted, or talked over",
+    tendency:"rarely speaks unless invited warmly by name, and gives very short answers at first",
+    low:["...I'm okay.","Nothing much to say. Sorry.","It's fine. Someone else can go."],
+    emo:{ low:"withdrawn", mid:"anxious", high:"hopeful" }, lowPosture:"looking_down", nod:"nods without looking up" },
+  sceptic: { label:"Sceptic", trust:3, eager:5, event:"challenge", rate:1.0,
     style:"Articulate, dry and a little sarcastic. Questions the point of the group.",
-    opens:"the facilitator responds to his challenge without getting defensive and accepts that it is his choice how much to share",
-    shuts:"the facilitator gets defensive, argues, lectures, or pushes him to share",
-    voice:{pitch:.75, rate:1.0} },
-  { id:"aisyah", name:"Aisyah", role:"Rescuer", color:"#e3a3c0", trust:6,
-    pub:"Third-year psychology student and the eldest of five siblings.",
-    hidden:"Looks after everyone so she does not have to face her own anxiety. Her parents expect her to become a doctor, which she does not want. Rushes to comfort or advise when others show pain.",
-    style:"Warm, quick to reassure, offers practical advice to others, and turns attention away from herself.",
-    opens:"the facilitator kindly notices her pattern and turns attention to her own needs",
-    shuts:"she is criticised for helping",
-    voice:{pitch:1.15, rate:1.06} },
-  { id:"farah", name:"Farah", role:"Grieving", color:"#86c4a5", trust:4,
-    pub:"Second-year business student.",
-    hidden:"Her grandmother, who raised her, died last semester. She is failing two subjects and has not told her family. Tearful and apologises for being emotional.",
-    style:"Soft-spoken, pauses, apologises, sometimes trails off.",
-    opens:"her feelings are reflected accurately and the group stays calm and does not rush to fix things",
+    opens:"the facilitator responds to their challenge without getting defensive and accepts that it is their choice how much to share",
+    shuts:"the facilitator gets defensive, argues, lectures, or pushes them to share",
+    tendency:"challenges the facilitator or the value of the group, especially in the storming stage",
+    low:["With respect, I'm not sure what talking in a circle achieves.","Is this going to be another 'how does that make you feel' session?","I'll pass, thanks."],
+    eventLines:["Can I be honest? I don't see what this achieves. We talk, then we go back to exactly the same problems.","No offence, but how is sitting here going to fix anything?"],
+    emo:{ low:"defensive", mid:"guarded", high:"anxious" }, lowPosture:"arms_crossed" },
+  rescuer: { label:"Rescuer", trust:6, eager:2, event:"rescue", rate:1.06,
+    style:"Warm, quick to reassure, offers practical advice to others, and turns attention away from themselves.",
+    opens:"the facilitator kindly notices the pattern and turns attention to their own needs",
+    shuts:"they are criticised for helping",
+    tendency:"rushes in with comfort or advice as soon as someone shows pain",
+    low:["I'm fine! Honestly, I'd rather we focus on the others.","Sorry, I was only trying to help.","I'll just listen today."],
+    eventLines:["Oh {target}, don't worry, it will get better! Maybe try talking to someone about it? I can help you make a plan.","You know what helped me? Making a plan. You should try it, {target}!"],
+    emo:{ low:"anxious", mid:"warm", high:"hopeful" }, lowPosture:"open" },
+  grieving: { label:"Hurting / tearful", trust:4, eager:6, rate:0.92, hurting:true,
+    style:"Soft-spoken, pauses, apologises for being emotional, sometimes trails off.",
+    opens:"their feelings are reflected accurately and the group stays calm and does not rush to fix things",
     shuts:"someone rushes to fix it, gives advice, or changes the subject",
-    voice:{pitch:1.05, rate:.92} },
-];
-const BYID = Object.fromEntries(MEMBERS.map(m => [m.id, m]));
-const INITIAL_REL = { "daniel|ravi": -1, "aisyah|farah": 1, "aisyah|daniel": -1 };
+    tendency:"is close to tears and shuts down if people rush to fix things",
+    low:["Sorry. I don't really want to talk about it.","I'm fine. Can someone else go?","It's okay. Really."],
+    emo:{ low:"withdrawn", mid:"sad", high:"sad" }, lowPosture:"looking_down", nod:"looks down and shakes their head slightly" },
+  anxious: { label:"Anxious worrier", trust:4, eager:4, rate:1.14,
+    style:"Speaks quickly, second-guesses, asks if what they said made sense, worries about being judged.",
+    opens:"the facilitator slows things down and normalises the worry",
+    shuts:"they feel rushed, evaluated or compared with others",
+    tendency:"worries about saying the wrong thing and looks for reassurance",
+    low:["Um, sorry, is it okay if I go later?","It's probably nothing. I overthink things.","Sorry, did that even make sense?"],
+    emo:{ low:"anxious", mid:"anxious", high:"hopeful" }, lowPosture:"looking_down" },
+  blamer: { label:"Blames others", trust:4, eager:3, rate:1.05,
+    style:"Frustrated, talks about what other people do wrong, says 'they always', and bristles when disagreed with.",
+    opens:"the facilitator acknowledges the frustration and gently turns to their own part and feelings",
+    shuts:"they feel accused, judged or told they are wrong",
+    tendency:"blames other people (a spouse, boss or family) and bristles when gently challenged",
+    low:["Honestly, the problem isn't me.","I don't see why I should be the one to change.","Fine. Whatever."],
+    emo:{ low:"irritated", mid:"irritated", high:"sad" }, lowPosture:"arms_crossed" },
+};
+
+const THEMES = {
+  academic: {
+    label:"Academic issues", who:"university students", ages:[19, 23],
+    title:"Coping with University Pressure",
+    setting:n => `A closed support group of ${n} university students at a Malaysian university counselling centre. Session 3 of 8, 60 minutes. Group norms agreed in session 1: confidentiality, speak for yourself, you may pass.`,
+    blurb:"University students in a support group at the campus counselling centre.",
+    note:"The members talk about loneliness, grief, family pressure, burnout and academic failure.",
+    backgrounds:[
+      { key:"provider", label:"Works long hours to support family",
+        pub:"Second-year engineering student who works part-time in a family restaurant.",
+        hidden:"Works 30 hours a week to pay a younger sister's tuition. Jokes and keeps busy so nobody asks how things really are, and is afraid of breaking down if they stop.",
+        mid:["Honestly, work's been crazy. Friday night, forty tables, and a lab report due at nine. But free nasi lemak, so who's complaining.","I keep telling myself it's only until my sister finishes her diploma. Two more years. That's nothing, right?"],
+        high:["Nobody at home asks how I am. They ask if the money's in. That's hard to say out loud.","I'm really tired. Not sleepy tired. Tired tired."] },
+      { key:"homesick", label:"First year away from home",
+        pub:"First-year accounting student from Sabah, living away from home for the first time.",
+        hidden:"Very homesick and lonely, has made no friends this semester, and worries about being a burden.",
+        mid:["It's quiet in my room. I call my mum every night but I don't tell her it's hard.","Sometimes I eat in the library so people don't see I'm alone."],
+        high:["I almost didn't come today. It's the first time this week anyone asked me something.","I feel like a burden if I tell people I'm lonely. Saying it here is less scary."] },
+      { key:"career", label:"Career pressure, a hidden failure",
+        pub:"Final-year law student who attends because a scholarship requires it.",
+        hidden:"Under heavy pressure to get a training contract. Failed an important interview last month and has told nobody.",
+        mid:["Law is brutal right now. Everyone's applying for the same handful of training contracts.","I suppose it's useful hearing I'm not the only one not sleeping."],
+        high:["I failed an interview last month. A big one. I haven't told anyone, not even my parents.","Saying that out loud is less awful than I expected."] },
+      { key:"expectations", label:"Family expectations",
+        pub:"Third-year psychology student and the eldest of five siblings.",
+        hidden:"Parents expect a medical career that is not wanted. Looks after everyone to avoid facing their own anxiety.",
+        mid:["I always end up being the one who sorts things out at home. It's just how it is.","My parents want me to do medicine after this. I said yes. I'm not sure I meant it."],
+        high:["I don't want to be a doctor. That's the first time I've said it to anyone.","It feels strange to have people listen to me instead of the other way round."] },
+      { key:"grief", label:"Recent loss",
+        pub:"Second-year business student.",
+        hidden:"The grandmother who raised them died last semester. Now failing two subjects and has not told the family.",
+        mid:["Sorry, I get emotional. My grandmother passed last semester. She raised me.","I keep opening my notes and just... staring at them."],
+        high:["I'm failing two subjects. My family doesn't know. I feel like I'm letting her down.","It helps that nobody here tried to fix it. I just needed to say it."] },
+      { key:"perfectionist", label:"Perfectionism and burnout",
+        pub:"Second-year medical student who was a top scorer in school.",
+        hidden:"Has not slept properly in weeks, freezes before exams, and secretly thinks about dropping out after scoring below average for the first time.",
+        mid:["I used to be the one people copied notes from. Now I read the same page five times.","Everyone thinks I've got it together. I really don't."],
+        high:["I got a C for the first time in my life and I haven't stopped thinking about it.","Sometimes I think about just quitting medicine. I've never said that out loud."] },
+    ],
+    presets:[
+      { name:"Ravi", gender:"m", arch:"dominator", bg:"provider", look:{ skin:"#a8714e", hair:"#2a1c15", top:"#e8925a", style:"tufts", extra:"hood" } },
+      { name:"Mei Ling", gender:"f", arch:"silent", bg:"homesick", look:{ skin:"#f3dac6", hair:"#1c1a1e", top:"#8fb7e0", style:"bob", glasses:"round" } },
+      { name:"Daniel", gender:"m", arch:"sceptic", bg:"career", look:{ skin:"#e6c09d", hair:"#17171a", top:"#465a8a", style:"sidepart", glasses:"square", extra:"collar" } },
+      { name:"Aisyah", gender:"f", arch:"rescuer", bg:"expectations", look:{ skin:"#dcac84", hijab:"#d98aa5", top:"#efe1d1", style:"hijab" } },
+      { name:"Farah", gender:"f", arch:"grieving", bg:"grief", look:{ skin:"#eecbb0", hair:"#3b2a21", top:"#86c4a5", style:"bun", extra:"scarf" } },
+      { name:"Wei Jie", gender:"m", arch:"anxious", bg:"perfectionist", look:{ skin:"#f1d2b6", hair:"#1b1a1c", top:"#d9c27a", style:"short", glasses:"round" } },
+    ],
+  },
+  marital: {
+    label:"Marital issues", who:"married people", ages:[32, 38],
+    title:"Strengthening Marriages",
+    setting:n => `A closed support group of ${n} married people, attending without their spouses, at a community family counselling centre in Kuala Lumpur. Session 3 of 8, 90 minutes. Group norms agreed in session 1: confidentiality, speak for yourself not your spouse, you may pass.`,
+    blurb:"Married people, attending without their spouses, at a family counselling centre.",
+    note:"The members talk about distance in marriage, in-law conflict, money secrets, broken trust after an affair, and exhaustion after a new baby.",
+    backgrounds:[
+      { key:"flatmates", label:"Feels like flatmates",
+        pub:"Married 9 years with two young children; both spouses work full-time.",
+        hidden:"Has not had a real conversation with their spouse in months beyond logistics, and fears the marriage is ending quietly.",
+        mid:["We talk about school fees, groceries, who's picking up the kids. That's it.","By the time the kids are asleep we're both on our phones."],
+        high:["I can't remember the last time we laughed together. I miss that.","Sometimes I wonder if we're only staying for the kids. I've never said that out loud."] },
+      { key:"inlaws", label:"Living with the in-laws",
+        pub:"Married 6 years, living in the spouse's parents' house.",
+        hidden:"Feels like an outsider at home. The spouse never takes their side when the in-laws criticise, and resentment is building.",
+        mid:["It's their house, their rules. I just try to keep the peace.","Every decision goes through my mother-in-law first."],
+        high:["When she criticises me in front of the kids and my spouse says nothing, I feel completely alone.","I'm starting to resent my spouse more than her, and that scares me."] },
+      { key:"money", label:"A money secret",
+        pub:"Married 11 years, runs a small business together with the spouse.",
+        hidden:"Has been hiding a large debt from a failed investment and is terrified of what will happen when the spouse finds out.",
+        mid:["Money is always the fight. Always.","We say we're partners in the business but we don't agree on anything."],
+        high:["I lost a lot of money last year and my spouse doesn't know how much.","I lie awake doing sums. I don't know how to tell them."] },
+      { key:"trust", label:"Rebuilding trust after an affair",
+        pub:"Married 8 years, back together after a short separation.",
+        hidden:"The spouse had an emotional affair last year. They stayed together, but they secretly check the spouse's phone and cannot let it go.",
+        mid:["We're working on things. That's what everyone says, right?","Some days are okay. Some days I can't stop thinking about it."],
+        high:["I check my spouse's phone when they're asleep. I hate that I do it.","I said I forgave. I don't think I have."] },
+      { key:"newbaby", label:"New baby, lost connection",
+        pub:"Married 4 years; their first baby was born seven months ago.",
+        hidden:"Exhausted, feels invisible to the spouse, and suspects they may be depressed but is ashamed to say so.",
+        mid:["Nobody tells you how lonely it is with a new baby.","My spouse helps, but I'm the one who knows everything. Every feed, every nappy."],
+        high:["Some mornings I don't want to get out of bed at all. I thought it would be happy.","I feel like I disappeared when the baby came."] },
+      { key:"away", label:"Spouse works away",
+        pub:"Married 10 years; the spouse works offshore and is home one month in three.",
+        hidden:"Has got used to running life alone and feels guilty that home is calmer when the spouse is away.",
+        mid:["When my spouse is away I run everything. When they're back I don't know my place.","The kids ask when they're coming home and I never know what to say."],
+        high:["Honestly, the house is calmer when my spouse is away. I feel terrible saying that.","I think we've become strangers who share a calendar."] },
+    ],
+    presets:[
+      { name:"Hafiz", gender:"m", arch:"sceptic", bg:"flatmates" },
+      { name:"Nurul", gender:"f", arch:"rescuer", bg:"inlaws", look:{ style:"hijab", hijab:"#b9a3d6" } },
+      { name:"Suresh", gender:"m", arch:"dominator", bg:"money" },
+      { name:"Michelle", gender:"f", arch:"blamer", bg:"trust" },
+      { name:"Liyana", gender:"f", arch:"silent", bg:"newbaby" },
+      { name:"Jason", gender:"m", arch:"anxious", bg:"away" },
+    ],
+  },
+  work: {
+    label:"Work issues", who:"working adults", ages:[27, 33],
+    title:"Managing Work Stress",
+    setting:n => `A closed support group of ${n} employees from different companies, run by an Employee Assistance Programme (EAP) in Kuala Lumpur. Session 3 of 8, 60 minutes after office hours. Group norms agreed in session 1: confidentiality, nothing is reported to employers, speak for yourself, you may pass.`,
+    blurb:"Employees from different companies in an Employee Assistance Programme group.",
+    note:"The members talk about burnout and panic attacks, a humiliating manager, being passed over, feeling like a fraud, possible retrenchment, and caring for a parent with dementia.",
+    backgrounds:[
+      { key:"burnout", label:"Burnout",
+        pub:"Senior analyst at a bank who regularly works until midnight.",
+        hidden:"Had a panic attack in the office toilet last month and hid it, and fears being seen as weak before a promotion decision.",
+        mid:["I answer emails at 1am. That's normal in my team.","My manager says I'm the backbone of the team. Great. The backbone is breaking."],
+        high:["Last month I had a panic attack in the office toilet. I told everyone it was food poisoning.","I'm scared that if I slow down they'll replace me."] },
+      { key:"boss", label:"A humiliating manager",
+        pub:"Marketing executive at a growing tech start-up.",
+        hidden:"Is regularly humiliated by the manager in meetings and has started to believe the criticism.",
+        mid:["My manager rewrites everything I do, in front of everyone.","I've started rehearsing what to say before every meeting."],
+        high:["Last week my manager called my work 'embarrassing' in front of the client. I went home and cried.","I'm starting to think maybe my manager is right about me."] },
+      { key:"passedover", label:"Passed over for promotion",
+        pub:"Engineer at a manufacturing plant for six years.",
+        hidden:"A colleague who joined much later was promoted over them. Feels bitter, has stopped trying, and is ashamed to tell the family.",
+        mid:["Six years. Six years and they give it to someone who joined last year.","I do my hours and I go home. Why should I do more?"],
+        high:["My parents keep asking about the promotion. I haven't told them.","I don't recognise myself at work any more. I used to care."] },
+      { key:"imposter", label:"New job, feels like a fraud",
+        pub:"Recently moved from a small firm to a large consulting company.",
+        hidden:"Feels like a fraud, secretly works weekends to keep up, and is sure of being found out.",
+        mid:["Everyone there went to the right universities. I didn't.","I work Saturdays so it looks like I'm keeping up."],
+        high:["Every morning I think today is the day they realise they hired the wrong person.","I haven't told anyone how lost I feel."] },
+      { key:"retrench", label:"Facing retrenchment",
+        pub:"Customer service team lead; the company announced a restructuring last month.",
+        hidden:"Has been told informally of being on the retrenchment list, is the main earner at home, and has not told the spouse.",
+        mid:["Every week there's another email about 'restructuring'. Everyone's on edge.","I keep refreshing my inbox, waiting for my name."],
+        high:["HR hinted I'm on the list. I'm the main earner at home and I haven't told anyone.","I smile at work and then sit in the car for twenty minutes before I can drive."] },
+      { key:"carer", label:"Caring for a parent while working",
+        pub:"Accounts executive and the only sibling living near an ageing parent.",
+        hidden:"Leaves work early to care for a parent with dementia, is falling behind, and feels guilty in both places.",
+        mid:["I'm late to work because of my father and late home because of work.","My siblings send money. I send myself."],
+        high:["Yesterday my father didn't recognise me for a few minutes. I went to work like nothing happened.","I feel like I'm failing everyone, all the time."] },
+    ],
+    presets:[
+      { name:"Arif", gender:"m", arch:"dominator", bg:"burnout" },
+      { name:"Priya", gender:"f", arch:"silent", bg:"boss" },
+      { name:"Kumar", gender:"m", arch:"blamer", bg:"passedover" },
+      { name:"Jia Hui", gender:"f", arch:"anxious", bg:"imposter" },
+      { name:"Syafiq", gender:"m", arch:"sceptic", bg:"retrench" },
+      { name:"Anis", gender:"f", arch:"rescuer", bg:"carer", look:{ style:"hijab", hijab:"#8fb3a8" } },
+    ],
+  },
+};
+const NAMES = {
+  m:["Ravi","Daniel","Arif","Hafiz","Wei Jie","Kumar","Jason","Amir","Darren","Syafiq","Kelvin","Haziq","Suresh","Faiz","Ken"],
+  f:["Mei Ling","Aisyah","Farah","Nurul","Priya","Siti","Jia Hui","Kavitha","Hannah","Liyana","Michelle","Anis","Shalini","Yee Ting","Aina"],
+};
+const HIJAB_NAMES = new Set(["Aisyah","Nurul","Siti","Liyana","Anis","Aina","Farah"]);
+const SEAT_COLORS = ["#e8925a","#8fb7e0","#9a8fd0","#e3a3c0","#86c4a5","#d9c27a"];
+const SKINS = ["#f3dac6","#eecbb0","#e6c09d","#dcac84","#c98f68","#a8714e"];
+const HAIRS = ["#1c1a1e","#2a1c15","#3b2a21","#17171a","#4a3426"];
+const HIJABS = ["#d98aa5","#b9a3d6","#8fb3a8","#e0b07a","#9cb8d9"];
+
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+function randomLook(gender, name, color) {
+  const hijab = gender === "f" && HIJAB_NAMES.has(name) && Math.random() < 0.7;
+  const style = hijab ? "hijab" : gender === "f" ? pick(["bob", "bun", "long"]) : pick(["tufts", "sidepart", "short"]);
+  return { skin:pick(SKINS), hair:pick(HAIRS), top:color, style, hijab: hijab ? pick(HIJABS) : null,
+    glasses: Math.random() < 0.3 ? pick(["round", "square"]) : null,
+    extra: style === "sidepart" ? "collar" : Math.random() < 0.25 ? pick(["scarf", "hood"]) : null };
+}
+function slugId(name, used) {
+  let base = name.toLowerCase().replace(/[^a-z]/g, "") || "member", id = base, n = 2;
+  while (used.has(id)) id = base + n++;
+  used.add(id); return id;
+}
+/* Turn a setup ({theme, count, seats:[{mode, preset, arch, bg, name}]}) into
+   the member list. Random choices avoid repeating personalities, backgrounds
+   and names where possible. */
+function composeGroup(setup) {
+  const T = THEMES[setup.theme];
+  const used = { arch:new Set(), bg:new Set(), name:new Set(), id:new Set() };
+  const seats = setup.seats.slice(0, setup.count);
+  // claim fixed choices first, so random seats work around them
+  seats.forEach(s => {
+    if (s.mode === "preset") { const p = T.presets[s.preset]; if (p) { used.arch.add(p.arch); used.bg.add(p.bg); used.name.add(p.name); } }
+    if (s.mode === "build") { if (s.arch && s.arch !== "random") used.arch.add(s.arch); if (s.bg && s.bg !== "random") used.bg.add(s.bg); if (s.name) used.name.add(s.name.trim()); }
+  });
+  const fresh = (all, set) => { const left = all.filter(x => !set.has(x)); const v = pick(left.length ? left : all); set.add(v); return v; };
+  return seats.map((s, i) => {
+    const color = SEAT_COLORS[i % SEAT_COLORS.length];
+    let arch, bg, name, gender, look;
+    if (s.mode === "preset" && T.presets[s.preset]) {
+      const p = T.presets[s.preset];
+      ({ arch, bg, name, gender } = p);
+      look = { ...randomLook(gender, name, color), ...(p.look || {}) };
+    } else {
+      arch = s.mode === "build" && s.arch && s.arch !== "random" ? s.arch : fresh(Object.keys(ARCHETYPES), used.arch);
+      bg = s.mode === "build" && s.bg && s.bg !== "random" ? s.bg : fresh(T.backgrounds.map(b => b.key), used.bg);
+      name = s.mode === "build" && s.name && s.name.trim() ? s.name.trim().slice(0, 20) : null;
+      gender = name ? (NAMES.f.includes(name) ? "f" : NAMES.m.includes(name) ? "m" : pick(["m", "f"])) : pick(["m", "f"]);
+      if (!name) name = fresh(NAMES[gender], used.name);
+      look = randomLook(gender, name, color);
+    }
+    const A = ARCHETYPES[arch], B = T.backgrounds.find(b => b.key === bg);
+    const age = T.ages[0] + Math.floor(Math.random() * (T.ages[1] - T.ages[0] + 1));
+    return {
+      id: slugId(name, used.id), name, gender, age, arch, bgKey:bg, color, look,
+      role: A.label, trust: A.trust,
+      pub: `${age} years old. ${B.pub}`, hidden: B.hidden,
+      style: A.style, opens: A.opens, shuts: A.shuts,
+      voice: { pitch: (gender === "f" ? 1.2 : 0.82) + (Math.random() - 0.5) * 0.12, rate: A.rate },
+    };
+  });
+}
+function initialRel(members) {
+  const rel = {}, has = (a, b) => (x, y) => (x.arch === a && y.arch === b) || (x.arch === b && y.arch === a);
+  for (let i = 0; i < members.length; i++) for (let j = i + 1; j < members.length; j++) {
+    const x = members[i], y = members[j];
+    let v = 0;
+    if (has("dominator", "sceptic")(x, y) || has("blamer", "rescuer")(x, y) || has("sceptic", "rescuer")(x, y)) v = -1;
+    if (has("rescuer", "grieving")(x, y) || has("silent", "grieving")(x, y)) v = 1;
+    rel[relKey(x.id, y.id)] = v;
+  }
+  return rel;
+}
+const NUMBER_WORDS = ["zero","one","two","three","four","five","six"];
+let GROUP = { title:"", setting:"" }, MEMBERS = [], BYID = {}, THEME = null;
+function applyGroup(setup) {
+  THEME = THEMES[setup.theme];
+  MEMBERS = composeGroup(setup);
+  BYID = Object.fromEntries(MEMBERS.map(m => [m.id, m]));
+  GROUP = { title: THEME.title, setting: THEME.setting(MEMBERS.length) };
+}
+const byArch = a => MEMBERS.find(m => m.arch === a);
+const ARCH = id => ARCHETYPES[BYID[id].arch];
+
 const EMOTIONS = ["calm","anxious","defensive","sad","hopeful","irritated","withdrawn","warm","amused","guarded","bored"];
 const EMO_COLOR = { calm:"#7fb3c8", anxious:"#e3c25a", defensive:"#e07b56", sad:"#6d8fd6", hopeful:"#7fcf8e", irritated:"#d9534f", withdrawn:"#9aa0a8", warm:"#f0a07a", amused:"#f2c94c", guarded:"#b08a6e", bored:"#b9b39a" };
 const POSTURES = ["open","leaning_in","arms_crossed","turned_away","looking_down"];
@@ -401,10 +669,7 @@ function resetState() {
   S.turn = 0; S.stage = "forming"; S.addressed = null; S.transcript = []; S.decisions = []; S.ended = false;
   S.flags = { challengeDone:false, rescueDone:false, lastBlockTurn:-9 };
   for (const m of MEMBERS) S.members[m.id] = { trust:m.trust, startTrust:m.trust, emotion: m.trust <= 3 ? "guarded" : "calm", posture: m.trust <= 3 ? "arms_crossed" : "open", gaze:"facilitator", turns:0, thought:"" };
-  S.rel = {};
-  for (let i = 0; i < MEMBERS.length; i++) for (let j = i + 1; j < MEMBERS.length; j++) {
-    const k = relKey(MEMBERS[i].id, MEMBERS[j].id); S.rel[k] = INITIAL_REL[k] || 0;
-  }
+  S.rel = initialRel(MEMBERS);
 }
 function relKey(a, b) { return [a, b].sort().join("|"); }
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -414,10 +679,13 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
    ============================================================ */
 const stageEl = document.getElementById("stage");
 const POS = {}; // id -> {x,y} in % of stage
-MEMBERS.forEach((m, i) => {
-  const a = (90 + 60 * (i + 1)) * Math.PI / 180;
-  POS[m.id] = { x: 50 + 36 * Math.cos(a), y: 52 + 33 * Math.sin(a) };
-});
+function layout2D() {
+  const step = 360 / (MEMBERS.length + 1);
+  MEMBERS.forEach((m, i) => {
+    const a = (90 + step * (i + 1)) * Math.PI / 180;
+    POS[m.id] = { x: 50 + 36 * Math.cos(a), y: 52 + 33 * Math.sin(a) };
+  });
+}
 POS.facilitator = { x:50, y:88 };
 const CENTER = { x:50, y:52 };
 
@@ -441,6 +709,7 @@ function figureSVG(m) {
   </svg>`;
 }
 function buildStage() {
+  stageEl.querySelectorAll(".member").forEach(e => e.remove());
   for (const m of MEMBERS) {
     const el = document.createElement("div");
     el.className = "member" + (POS[m.id].y < 40 ? " top" : "");
@@ -704,7 +973,7 @@ async function callJSON(endpoint, model, messages, opts) {
 }
 /* JSON schemas for structured output (LM Studio / llama.cpp turn these into
    a grammar, so a small model can only produce valid JSON in this shape). */
-const DIRECTOR_SCHEMA = {
+const directorSchema = () => ({
   type:"object", additionalProperties:false,
   properties:{
     skills:{ type:"array", items:{ type:"string", enum:Object.keys(SKILLS) } },
@@ -717,8 +986,8 @@ const DIRECTOR_SCHEMA = {
     continue:{ type:"boolean" },
   },
   required:["skills","skill_note","stage","event","speakers","silent_reactions","reasoning","continue"],
-};
-const MEMBER_SCHEMA = {
+});
+const memberSchema = () => ({
   type:"object", additionalProperties:false,
   properties:{
     text:{ type:"string" },
@@ -731,7 +1000,7 @@ const MEMBER_SCHEMA = {
     feelings:{ type:"array", items:{ type:"object", additionalProperties:false, properties:{ id:{ type:"string", enum:MEMBERS.map(m => m.id) }, change:{ type:"integer" } }, required:["id","change"] } },
   },
   required:["text","action","emotion","gaze","posture","trust_delta","private_thought","feelings"],
-};
+});
 const OBSERVER_SCHEMA = {
   type:"object", additionalProperties:false,
   properties:{
@@ -769,14 +1038,13 @@ ${MEMBERS.map(m => `- [${m.id}] ${m.name}, ${m.role}: ${m.pub}`).join("\n")}
 Your job each turn:
 1. Classify the facilitator's latest move using these skill labels: ${Object.keys(SKILLS).join(", ")}.
 2. Decide the group stage: forming, storming, norming or working. Move to storming once the group has warmed up (around turn 2 to 4) and let a challenge or conflict surface. Move to norming only after the facilitator has handled conflict well and average trust rises. Move to working when trust is high and members are sharing honestly.
-3. Choose who responds, in order (at most 5).
-   - If the facilitator speaks to the WHOLE group (a greeting such as "hi everyone", a check-in, a round, or a question to all), most members respond: usually 3 to 5, in the order this group would really go (eager or dominant members first, cautious members later). A member with low trust may give only a very brief answer or a non-verbal response such as a nod; say so in their instruction.
+3. Choose who responds, in order (at most ${MEMBERS.length}).
+   - If the facilitator speaks to the WHOLE group (a greeting such as "hi everyone", a check-in, a round, or a question to all), most members respond: usually ${Math.min(3, MEMBERS.length)} to ${MEMBERS.length}, in the order this group would really go (eager or dominant members first, cautious members later). A member with low trust may give only a very brief answer or a non-verbal response such as a nod; say so in their instruction.
    - If the facilitator addressed one person by name, that person answers, and at most one other member reacts.
    - Otherwise 1 or 2 members respond (for example one speaks and another reacts to them).
    - Choose 0 only if the facilitator asked for silence and the group would really stay quiet.
-   - Members with low trust rarely volunteer. The dominant member (ravi) jumps in when there is a pause unless he was recently blocked.
-   - The rescuer (aisyah) tends to rush in with advice after someone shows pain.
-   - The sceptic (daniel) challenges the facilitator or the group during storming.
+   - Members with low trust rarely volunteer. Each member's pattern:
+${MEMBERS.map(m => `     - ${m.name} (${m.id}) ${ARCHETYPES[m.arch].tendency}.`).join("\n")}
    - Give each chosen speaker a short private instruction about what to do (react, challenge, deflect, open up a little, and so on). Do not script their words.
 4. Optionally note silent reactions: members who do not speak but whose trust changes because of the facilitator's move (for example, others feel safer when a dominant member is blocked kindly). Use trust_delta -1 or +1.
 5. Decide "continue": true if, after these speakers, the group would naturally keep talking among themselves without waiting for the facilitator (someone wants to reply to another member, a disagreement is building, the dominant member keeps going, members are connecting). false if the group would fall quiet and look to the facilitator, or a member has just asked the facilitator something. Real groups often carry on for a few exchanges, so do not always hand back to the facilitator; this is how the trainee practises managing the group.
@@ -794,7 +1062,7 @@ ${recentTranscript()}
 
 Facilitator's latest move${addressed ? " (addressed to " + addressed + ")" : ""}: ${facText}`;
   const obj = await callJSON(directorEndpoint(), config.directorModel,
-    [{ role:"system", content:directorSystemPrompt() }, { role:"user", content:user }], { temperature:0.4, max_tokens:700, onProgress:progressReporter(), schema:DIRECTOR_SCHEMA });
+    [{ role:"system", content:directorSystemPrompt() }, { role:"user", content:user }], { temperature:0.4, max_tokens:700, onProgress:progressReporter(), schema:directorSchema() });
   return normaliseDecision(obj);
 }
 async function llmDirectorBeat(beat) {
@@ -808,7 +1076,7 @@ ${recentTranscript(18)}
 There is NO new facilitator move. The members have been talking for ${beat} exchange(s) since the facilitator last spoke. Decide whether the conversation carries on among the members right now: who naturally speaks next (usually 1, at most 2), for example replying to what another member just said, asking another member something, disagreeing, rescuing, joking, or taking over. Their instruction should say who they are responding to. Leave "skills" empty and "skill_note" empty, because the facilitator did not speak.
 If the group would fall quiet and look to the facilitator now, return an empty speakers list and continue false.`;
   const obj = await callJSON(directorEndpoint(), config.directorModel,
-    [{ role:"system", content:directorSystemPrompt() }, { role:"user", content:user }], { temperature:0.5, max_tokens:500, onProgress:progressReporter(), schema:DIRECTOR_SCHEMA });
+    [{ role:"system", content:directorSystemPrompt() }, { role:"user", content:user }], { temperature:0.5, max_tokens:500, onProgress:progressReporter(), schema:directorSchema() });
   const d = normaliseDecision(obj);
   d.skills = []; d.skillNote = "";
   d.speakers = d.speakers.slice(0, 2);
@@ -817,7 +1085,7 @@ If the group would fall quiet and look to the facilitator now, return an empty s
 function normaliseDecision(obj) {
   const skills = (Array.isArray(obj.skills) ? obj.skills : []).map(s => String(s).toLowerCase().trim().replace(/\s+/g, "_")).filter(s => SKILLS[s]);
   let speakers = (Array.isArray(obj.speakers) ? obj.speakers : []).map(s => ({ id: String(s.id || s.name || "").toLowerCase().replace(/\s+/g, ""), instruction: String(s.instruction || "") })).filter(s => BYID[s.id]);
-  const seen = new Set(); speakers = speakers.filter(s => !seen.has(s.id) && seen.add(s.id)).slice(0, 5);
+  const seen = new Set(); speakers = speakers.filter(s => !seen.has(s.id) && seen.add(s.id)).slice(0, MEMBERS.length);
   const silent = (Array.isArray(obj.silent_reactions) ? obj.silent_reactions : []).map(r => ({ id:String(r.id || "").toLowerCase(), delta: clamp(Math.round(+r.trust_delta || 0), -1, 1), why:String(r.why || "") })).filter(r => BYID[r.id] && r.delta && !speakers.some(s => s.id === r.id));
   const stage = ["forming","storming","norming","working"].includes(obj.stage) ? obj.stage : S.stage;
   const cont = obj.continue === true || obj.continue === "true";
@@ -830,9 +1098,9 @@ function memberSystemPrompt(m) {
   return `You are role-playing ${m.name}, a fictional member of a counselling support group, in a training simulation for trainee counsellors. Stay fully in character. Never mention that you are an AI or that this is a simulation.
 
 Group: ${GROUP.title}. ${GROUP.setting}
-Who you are (public): ${m.pub}
+Who you are (public): ${m.name}, ${m.pub} The other members are around the same age.
 Your private story (the others do not know it; reveal it only gradually and only if trust is high, 7 or more): ${m.hidden}
-How you talk: ${m.style}
+How you talk: ${m.style} You are Malaysian; light Malaysian English is natural for you.
 You open up when ${m.opens}. You shut down when ${m.shuts}.
 Other members: ${others}. The facilitator is the trainee.
 
@@ -857,7 +1125,7 @@ ${recentTranscript()}
 Director's private note for your next turn (do not repeat it): ${instruction || "respond naturally"}
 Now give your turn as JSON.`;
   const obj = await callJSON(config.memberEndpoint, config.memberModel,
-    [{ role:"system", content:memberSystemPrompt(m) }, { role:"user", content:user }], { temperature:0.85, max_tokens:450, onProgress:progressReporter(), schema:MEMBER_SCHEMA, plainTextOk:true });
+    [{ role:"system", content:memberSystemPrompt(m) }, { role:"user", content:user }], { temperature:0.85, max_tokens:450, onProgress:progressReporter(), schema:memberSchema(), plainTextOk:true });
   if (obj.__plain) return { ...normaliseMember({ text: plainToLine(obj.__plain, m) }, m.id), plain: true };
   return normaliseMember(obj, m.id);
 }
@@ -913,95 +1181,73 @@ function detectSkills(text, addressed) {
   if (!s.size) s.add("other");
   return [...s];
 }
-const DEMO_LINES = {
-  ravi: {
-    low:["Haha, okay, okay, I'll keep it short. Everything's fine lah, just tired. Same as everyone, right?","You cut me off last time, so... I'll just listen I guess.","Can we not make it a big thing? I'm good, really."],
-    mid:["Honestly, work's been crazy. Friday night, forty tables, my uncle shouting, and a lab report due at nine. But free nasi lemak, so who's complaining.","I keep telling myself it's only until my sister finishes her diploma. Two more years. That's nothing, right?","Sorry, I'm talking a lot again. It's just easier than sitting in the quiet."],
-    high:["If I stop joking for one second I think I'd just... I don't know. I'm really tired. Not sleepy tired. Tired tired.","Nobody at home asks how I am. They ask if the money's in. That's hard to say out loud.","It actually helps that you didn't let me turn it into a joke."],
-    event:["Oh, that's like me! Last week at the restaurant, right, my uncle made me close up alone and then...","Can I jump in? Because the same thing happened to me, it's crazy."],
-  },
-  meiling: {
-    low:["...I'm okay.","Nothing much to say. Sorry.","It's fine. Someone else can go."],
-    mid:["It's quiet in my room. I call my mum every night but I don't tell her it's hard.","Sometimes I eat in the library so people don't see I'm alone.","I didn't think anyone else felt like this."],
-    high:["I almost didn't come today. It's the first time this week anyone asked me something.","I feel like a burden if I tell people I'm lonely. Saying it here is... less scary.","Farah, when you talked about your grandmother, I thought of my Ah Ma. I miss home so much."],
-  },
-  daniel: {
-    low:["With respect, I'm not sure what talking in a circle achieves. I'm here because the scholarship form says so.","Is this going to be another 'how does that make you feel' session?","I'll pass, thanks."],
-    mid:["Fine. Law is brutal right now. Everyone's applying for the same handful of training contracts.","I suppose it's useful hearing I'm not the only one not sleeping.","I'm not against this. I just don't like being told to share on command."],
-    high:["I failed an interview last month. A big one. I haven't told anyone, not even my parents.","Saying that out loud is less awful than I expected.","I was being difficult earlier. That was easier than admitting I'm scared."],
-    event:["Can I be honest? I don't see what this achieves. We talk, then we go back to exactly the same problems.","No offence, but how is sitting here going to fix anything?"],
-  },
-  aisyah: {
-    low:["I'm fine! Honestly, I'd rather we focus on the others.","Sorry, I was only trying to help.","I'll just listen today."],
-    mid:["I always end up being the one who sorts things out at home. It's just how it is.","My parents want me to do medicine after this. I said yes. I'm not sure I meant it.","Being the eldest, you just... handle things. Nobody asks."],
-    high:["I think I help everyone so I don't have to think about myself. That's a bit uncomfortable to notice.","I don't want to be a doctor. That's the first time I've said it to anyone.","It feels strange to have people listen to me instead of the other way round."],
-    event:["Oh Farah, don't worry, you'll catch up! Maybe talk to your lecturers? I can help you plan a timetable.","You know what helped me? Making a schedule. You should try it!"],
-  },
-  farah: {
-    low:["Sorry. I don't really want to talk about it.","I'm fine. Can someone else go?","It's okay. Really."],
-    mid:["Sorry, I get emotional. My grandmother passed last semester. She raised me.","Everyone says it gets easier. It doesn't feel easier.","I keep opening my notes and just... staring at them."],
-    high:["I'm failing two subjects. My family doesn't know. I feel like I'm letting her down.","When you said it sounds like I'm carrying it alone, that was exactly it.","It helps that nobody here tried to fix it. I just needed to say it."],
-  },
-};
 const DEMO_THOUGHTS = {
   up:["That actually felt like being heard.","Maybe it's okay to say a bit more.","They're not judging me. I think.","Okay. This feels a little safer."],
   down:["Nope. Not opening up again.","That stung. I'll keep it to myself.","They're not really listening.","Just get through the hour."],
   flat:["I'll see where this goes.","Should I say something? Not yet.","Everyone's watching. Keep it light.","I wonder if anyone else feels like this."],
 };
+const SENSITIVE = new Set(["grieving","sceptic","silent","anxious"]);
+// the member who most recently showed pain this turn (a rescue target)
+function hurtingSpeaker(entries) {
+  for (let i = entries.length - 1; i >= 0; i--) { const e = entries[i]; if (BYID[e.who] && (ARCH(e.who).hurting || e.emotion === "sad")) return e.who; }
+  return null;
+}
 function demoDirector(text, addressed) {
   const skills = detectSkills(text, addressed);
   const t = text.toLowerCase();
   const named = addressed || (MEMBERS.find(m => t.includes(m.name.toLowerCase()) || t.includes(m.name.split(" ")[0].toLowerCase())) || {}).id || null;
-  const last = [...S.transcript].reverse().find(e => e.who !== "facilitator" && e.who !== "system" && e.who !== "warn");
+  const last = [...S.transcript].reverse().find(e => BYID[e.who]);
+  const dom = byArch("dominator"), scep = byArch("sceptic"), resc = byArch("rescuer");
+  const quietest = MEMBERS.slice().sort((a, b) => S.members[a.id].trust - S.members[b.id].trust || ARCHETYPES[b.arch].eager - ARCHETYPES[a.arch].eager)[0];
   let speakers = [], event = "", reasoning = "", silent = [];
-  // stage
   const avg = MEMBERS.reduce((a, m) => a + S.members[m.id].trust, 0) / MEMBERS.length;
   let stage = S.stage;
   if (S.turn >= 3 && stage === "forming") stage = "storming";
-  if (stage === "storming" && S.flags.challengeDone && avg >= 5.2) stage = "norming";
+  if (stage === "storming" && (S.flags.challengeDone || !scep) && avg >= 5.2) stage = "norming";
   if (stage === "norming" && avg >= 6.6) stage = "working";
-  // facilitator just responded to a challenge
-  if (last && last.who === "daniel" && last.event === "challenge" && skills.includes("holding_silence")) {
-    speakers.push({ id:"daniel", instruction:"The facilitator let your challenge sit in silence. Fill it, a little less sharply." });
-    reasoning = "Holding the silence after a challenge puts the question back to the group; Daniel fills it himself.";
-  } else if (last && last.who === "daniel" && last.event === "challenge") {
+  const hurt = hurtingSpeaker(S.transcript.slice(-4));
+  if (last && last.event === "challenge" && skills.includes("holding_silence")) {
+    speakers.push({ id:last.who, instruction:"The facilitator let your challenge sit in silence. Fill it, a little less sharply." });
+    reasoning = `Holding the silence after a challenge puts the question back to the group; ${BYID[last.who].name} fills it.`;
+  } else if (last && last.event === "challenge") {
     const good = skills.some(s => ["acknowledging","reflection","open_question","immediacy"].includes(s)) && !skills.includes("defensive");
-    speakers.push({ id:"daniel", instruction: good ? "The facilitator took your challenge well. Soften a little." : "The facilitator got defensive. Dig in." });
-    reasoning = good ? "Daniel's challenge was met without defensiveness, so he gets space to soften." : "The facilitator argued back, so Daniel digs in.";
-    if (good) silent.push({ id:"meiling", delta:1, why:"saw a challenge handled calmly" });
+    speakers.push({ id:last.who, instruction: good ? "The facilitator took your challenge well. Soften a little." : "The facilitator got defensive. Dig in." });
+    reasoning = good ? `${BYID[last.who].name}'s challenge was met without defensiveness, so they get space to soften.` : `The facilitator argued back, so ${BYID[last.who].name} digs in.`;
+    if (good && quietest.id !== last.who) silent.push({ id:quietest.id, delta:1, why:"saw a challenge handled calmly" });
   } else if (skills.includes("blocking") || skills.includes("cutting_off")) {
     S.flags.lastBlockTurn = S.turn;
-    const quiet = MEMBERS.filter(m => m.id !== "ravi").sort((a, b) => S.members[a.id].turns - S.members[b.id].turns)[0];
-    speakers.push({ id: named && named !== "ravi" ? named : quiet.id, instruction:"Space opened up after Ravi was held back. Take it, carefully." });
-    reasoning = "Holding Ravi back made room for a quieter member.";
-    silent.push({ id:"ravi", delta: skills.includes("cutting_off") ? -1 : 0, why: skills.includes("cutting_off") ? "felt cut off" : "" });
-    if (skills.includes("blocking")) silent.push({ id:"meiling", delta:1, why:"the group feels less crowded" });
+    const held = dom || (last && BYID[last.who]) || MEMBERS[0];
+    const other = MEMBERS.filter(m => m.id !== held.id).sort((a, b) => S.members[a.id].turns - S.members[b.id].turns)[0];
+    speakers.push({ id: named && named !== held.id ? named : other.id, instruction:`Space opened up after ${held.name} was held back. Take it, carefully.` });
+    reasoning = `Holding ${held.name} back made room for a quieter member.`;
+    if (skills.includes("cutting_off")) silent.push({ id:held.id, delta:-1, why:"felt cut off" });
+    if (skills.includes("blocking") && other.id !== held.id) silent.push({ id:quietest.id === held.id ? other.id : quietest.id, delta:1, why:"the group feels less crowded" });
   } else if (!named && /\b(everyone|everybody|all of you|you all|guys|each of you|the group|go (a)?round|check[- ]in)\b|^(hi|hello|hey|welcome|good (morning|afternoon|evening))\b/.test(t.trim())) {
-    for (const id of ["ravi", "aisyah", "farah", "daniel", "meiling"]) {
-      const tr = S.members[id].trust;
-      if (id === "daniel" && stage === "storming" && !S.flags.challengeDone) {
-        speakers.push({ id, instruction:"Use the round to challenge the point of the group.", event:"challenge" });
-        event = "Daniel uses the round to challenge the value of the group (a typical storming-stage test)."; S.flags.challengeDone = true;
-      } else speakers.push({ id, instruction: tr >= 4 ? "Answer the question to the group briefly." : "Low trust: give only a very brief answer, or just nod." });
+    for (const m of MEMBERS.slice().sort((a, b) => ARCHETYPES[a.arch].eager - ARCHETYPES[b.arch].eager)) {
+      const tr = S.members[m.id].trust;
+      if (m.arch === "sceptic" && stage === "storming" && !S.flags.challengeDone) {
+        speakers.push({ id:m.id, instruction:"Use the round to challenge the point of the group.", event:"challenge" });
+        event = `${m.name} uses the round to challenge the value of the group (a typical storming-stage test).`; S.flags.challengeDone = true;
+      } else speakers.push({ id:m.id, instruction: tr >= 4 ? "Answer the question to the group briefly." : "Low trust: give only a very brief answer, or just nod." });
     }
     reasoning = "The facilitator addressed the whole group, so everyone answers in turn: the eager members first, the cautious ones last and briefly.";
   } else if (named) {
     speakers.push({ id:named, instruction:"You were addressed directly. Respond in line with your trust." });
     reasoning = `The facilitator spoke to ${BYID[named].name} directly, so ${BYID[named].name} answers.`;
-  } else if (stage === "storming" && !S.flags.challengeDone) {
-    speakers.push({ id:"daniel", instruction:"Challenge the point of the group.", event:"challenge" });
-    event = "Daniel challenges the value of the group (a typical storming-stage test of the facilitator).";
+  } else if (scep && stage === "storming" && !S.flags.challengeDone) {
+    speakers.push({ id:scep.id, instruction:"Challenge the point of the group.", event:"challenge" });
+    event = `${scep.name} challenges the value of the group (a typical storming-stage test of the facilitator).`;
     reasoning = "The group has warmed up enough for the storming stage; the sceptic tests the facilitator.";
     S.flags.challengeDone = true;
-  } else if (last && last.who === "farah" && S.members.farah.emotion === "sad" && !S.flags.rescueDone) {
-    speakers.push({ id:"aisyah", instruction:"Rush in to comfort Farah with advice.", event:"rescue" });
-    event = "Aisyah rushes to rescue Farah with advice, which tests whether you protect Farah's space.";
-    reasoning = "Farah showed pain, and the rescuer's pattern is to fix it quickly.";
+  } else if (resc && hurt && hurt !== resc.id && !S.flags.rescueDone) {
+    speakers.push({ id:resc.id, instruction:`Rush in to comfort ${BYID[hurt].name} with advice.`, event:"rescue", target:hurt });
+    event = `${resc.name} rushes to rescue ${BYID[hurt].name} with advice, which tests whether you protect ${BYID[hurt].name}'s space.`;
+    reasoning = `${BYID[hurt].name} showed pain, and the rescuer's pattern is to fix it quickly.`;
     S.flags.rescueDone = true;
-  } else if (S.turn - S.flags.lastBlockTurn > 3 && Math.random() < .4) {
-    speakers.push({ id:"ravi", instruction:"Jump in and take over the space.", event:"interrupt" });
-    event = "Ravi fills the pause and takes over the conversation.";
-    reasoning = "No one has held Ravi back recently, so the dominant member fills the space.";
+  } else if (dom && S.turn - S.flags.lastBlockTurn > 3 && Math.random() < .4) {
+    speakers.push({ id:dom.id, instruction:"Jump in and take over the space.", event:"interrupt" });
+    event = `${dom.name} fills the pause and takes over the conversation.`;
+    reasoning = `No one has held ${dom.name} back recently, so the dominant member fills the space.`;
   } else {
     const cand = MEMBERS.filter(m => !last || m.id !== last.who).sort((a, b) => (S.members[b.id].trust - S.members[b.id].turns * 1.5) - (S.members[a.id].trust - S.members[a.id].turns * 1.5));
     speakers.push({ id:cand[0].id, instruction:"Respond to what's been said." });
@@ -1020,13 +1266,14 @@ function demoBeat(beat) {
   const said = S.transcript.filter(e => e.turn === S.turn && BYID[e.who]);
   const last = said[said.length - 1];
   const spokeNow = new Set(said.map(e => e.who));
+  const dom = byArch("dominator"), resc = byArch("rescuer"), hurt = hurtingSpeaker(said.slice(-2));
   let sp, reasoning, event = "";
-  if (last && last.who === "farah" && !S.flags.rescueDone) {
-    sp = { id:"aisyah", instruction:"Rush in to comfort Farah with advice.", event:"rescue" }; S.flags.rescueDone = true;
-    event = "Aisyah rushes to rescue Farah with advice."; reasoning = "Farah showed pain, and the rescuer's pattern is to fix it quickly.";
-  } else if (last && last.who !== "ravi" && S.turn - S.flags.lastBlockTurn > 2 && Math.random() < .45) {
-    sp = { id:"ravi", instruction:`Jump in after ${BYID[last.who].name} and take over.`, event:"interrupt" };
-    event = "Ravi jumps in and takes over the conversation."; reasoning = "Nobody has held Ravi back, so he fills the space.";
+  if (resc && hurt && hurt !== resc.id && !S.flags.rescueDone) {
+    sp = { id:resc.id, instruction:`Rush in to comfort ${BYID[hurt].name} with advice.`, event:"rescue", target:hurt }; S.flags.rescueDone = true;
+    event = `${resc.name} rushes to rescue ${BYID[hurt].name} with advice.`; reasoning = `${BYID[hurt].name} showed pain, and the rescuer's pattern is to fix it quickly.`;
+  } else if (dom && last && last.who !== dom.id && S.turn - S.flags.lastBlockTurn > 2 && Math.random() < .45) {
+    sp = { id:dom.id, instruction:`Jump in after ${BYID[last.who].name} and take over.`, event:"interrupt" };
+    event = `${dom.name} jumps in and takes over the conversation.`; reasoning = `Nobody has held ${dom.name} back, so they fill the space.`;
   } else {
     const cand = MEMBERS.filter(m => !spokeNow.has(m.id) && S.members[m.id].trust >= 4);
     if (!cand.length) return { skills:[], skillNote:"", stage:S.stage, event:"", speakers:[], silent:[], reasoning:"Everyone who feels safe enough has spoken, so the group looks to you.", cont:false };
@@ -1037,7 +1284,7 @@ function demoBeat(beat) {
   return { skills:[], skillNote:"", stage:S.stage, event, speakers:[sp], silent:[], reasoning, cont: Math.random() < (beat < 2 ? .75 : .45) };
 }
 function demoMember(m, instruction, ctx) {
-  const st = S.members[m.id];
+  const st = S.members[m.id], A = ARCHETYPES[m.arch], B = THEME.backgrounds.find(b => b.key === m.bgKey);
   let delta = 0;
   const addressedMe = ctx.addressed === m.id || ctx.text.toLowerCase().includes(m.name.toLowerCase().split(" ")[0]);
   const good = ctx.skills.some(s => ["reflection","open_question","drawing_out","protecting","acknowledging","immediacy","blocking","linking","summarising"].includes(s));
@@ -1046,24 +1293,25 @@ function demoMember(m, instruction, ctx) {
   else if (/took your challenge well/.test(instruction)) delta = 2;
   else if (/got defensive/.test(instruction)) delta = -1;
   else if (addressedMe && good && !bad) delta = ctx.skills.includes("reflection") || ctx.skills.includes("drawing_out") ? 2 : 1;
-  else if (addressedMe && bad) delta = (m.id === "farah" || m.id === "daniel" || m.id === "meiling") ? -1 : 0;
+  else if (addressedMe && bad) delta = SENSITIVE.has(m.arch) ? -1 : 0;
   else if (good && !bad) delta = Math.random() < .5 ? 1 : 0;
   const newTrust = clamp(st.trust + delta, 0, 10);
   const band = newTrust >= 7 ? "high" : newTrust >= 4 ? "mid" : "low";
-  const lines = ctx.speakerEvent && DEMO_LINES[m.id].event ? DEMO_LINES[m.id].event : DEMO_LINES[m.id][band];
+  const target = ctx.target || hurtingSpeaker(S.transcript.slice(-4));
+  let lines = ctx.speakerEvent && A.eventLines ? A.eventLines : band === "low" ? A.low : B[band];
+  lines = lines.map(l => l.replace(/\{target\}/g, target ? BYID[target].name : "everyone"));
   const used = new Set(S.transcript.filter(e => e.who === m.id).map(e => e.text));
   const text = R(lines.filter(l => !used.has(l))) || R(lines);
-  const emo = { ravi:{low:"guarded",mid:"amused",high:"sad"}, meiling:{low:"withdrawn",mid:"anxious",high:"hopeful"}, daniel:{low:"defensive",mid:"guarded",high:"anxious"}, aisyah:{low:"anxious",mid:"warm",high:"hopeful"}, farah:{low:"withdrawn",mid:"sad",high:"sad"} }[m.id][band];
-  const posture = band === "low" ? (m.id === "daniel" ? "arms_crossed" : m.id === "meiling" || m.id === "farah" ? "looking_down" : "turned_away") : band === "high" ? "leaning_in" : "open";
+  const emo = A.emo[band];
+  const posture = band === "low" ? A.lowPosture : band === "high" ? "leaning_in" : "open";
   let gaze = "facilitator";
-  if (ctx.speakerEvent === "rescue") gaze = "farah";
-  else if (/Farah,/.test(text)) gaze = "farah";
+  if (ctx.speakerEvent === "rescue" && target) gaze = target;
   else if (band === "low" && Math.random() < .5) gaze = "floor";
   const feelings = {};
-  if (ctx.speakerEvent === "interrupt") feelings.meiling = -1;
-  if (/Farah,/.test(text) && m.id !== "farah") feelings.farah = 1;
-  if (m.id === "daniel" && band === "high") feelings.ravi = 1;
-  if (band === "low" && /just nod/.test(instruction) && Math.random() < .5) return { text:"", action: m.id === "meiling" ? "nods without looking up" : "shrugs", emotion:emo, posture, gaze:"floor", delta, thought: R(DEMO_THOUGHTS.flat), feelings };
+  const silentOne = byArch("silent");
+  if (ctx.speakerEvent === "interrupt" && silentOne && silentOne.id !== m.id) feelings[silentOne.id] = -1;
+  if (ctx.speakerEvent === "rescue" && target && target !== m.id) feelings[target] = 1;
+  if (band === "low" && /just nod/.test(instruction) && Math.random() < .5) return { text:"", action: A.nod || "shrugs", emotion:emo, posture, gaze:"floor", delta, thought: R(DEMO_THOUGHTS.flat), feelings };
   return { text, action:"", emotion:emo, posture, gaze, delta, thought: R(DEMO_THOUGHTS[delta > 0 ? "up" : delta < 0 ? "down" : "flat"]), feelings };
 }
 
@@ -1243,7 +1491,7 @@ async function runSpeakers(dec, record, ctxBase) {
   const genFor = sp => {
     const m = BYID[sp.id], t1 = performance.now();
     setTyping(m.id, true);
-    const ctx = { ...ctxBase, speakerEvent:sp.event };
+    const ctx = { ...ctxBase, speakerEvent:sp.event, target:sp.target };
     return (async () => {
       try {
         if (S.mode === "llm") return { out: await llmMember(m, sp.instruction) };
@@ -1411,7 +1659,58 @@ function renderDebrief(obs, note) {
 /* ============================================================
    UI WIRING
    ============================================================ */
-document.getElementById("castList").innerHTML = MEMBERS.map(m => `<div class="c"><span class="sw" style="background:${m.color}"></span><span><b>${m.name}</b> <span class="hint">(${m.role})</span><br>${esc(m.pub)}</span></div>`).join("");
+/* ---------- setup screen ---------- */
+const DEFAULT_SETUP = theme => ({ theme, count:5, seats:[0,1,2,3,4,5].map(i => ({ mode:"preset", preset:i, arch:"random", bg:"random", name:"" })) });
+let setup = (() => { try { const v = JSON.parse(store("setup") || "null"); if (v && THEMES[v.theme] && v.seats && v.seats.length === 6) return v; } catch (e) {} return DEFAULT_SETUP("academic"); })();
+function readSetup() { return JSON.parse(JSON.stringify(setup)); }
+function saveSetup() { store("setup", JSON.stringify(setup)); }
+function renderSetup() {
+  const T = THEMES[setup.theme];
+  document.getElementById("themePick").innerHTML = Object.entries(THEMES).map(([k, t]) =>
+    `<label><input type="radio" name="theme" value="${k}" ${k === setup.theme ? "checked" : ""}><span><b>${esc(t.label)}</b><br><span class="hint">${esc(t.blurb)} Ages ${t.ages[0]}–${t.ages[1]}.</span></span></label>`).join("");
+  document.querySelectorAll('input[name="theme"]').forEach(r => r.onchange = () => { setup = { ...DEFAULT_SETUP(r.value), count:setup.count }; saveSetup(); renderSetup(); });
+  document.getElementById("countPick").value = String(setup.count);
+  const archOpts = `<option value="random">Random personality</option>` + Object.entries(ARCHETYPES).map(([k, a]) => `<option value="${k}">${esc(a.label)}</option>`).join("");
+  const bgOpts = `<option value="random">Random background</option>` + T.backgrounds.map(b => `<option value="${b.key}">${esc(b.label)}</option>`).join("");
+  const presetOpts = T.presets.map((p, i) => { const b = T.backgrounds.find(x => x.key === p.bg); return `<option value="preset:${i}">${esc(p.name)}: ${esc(ARCHETYPES[p.arch].label)}, ${esc(b.label.toLowerCase())}</option>`; }).join("");
+  const box = document.getElementById("seats");
+  box.innerHTML = "";
+  setup.seats.slice(0, setup.count).forEach((seat, i) => {
+    const d = document.createElement("div"); d.className = "seat";
+    d.innerHTML = `<div class="top"><span class="sw" style="background:${SEAT_COLORS[i]}"></span><b>Seat ${i + 1}</b>
+        <select class="mode" aria-label="Seat ${i + 1} character"><option value="random">Random character</option><optgroup label="Ready-made">${presetOpts}</optgroup><option value="build">Build my own…</option></select></div>
+      <div class="build ${seat.mode === "build" ? "" : "hidden"}"><select class="arch" aria-label="Personality">${archOpts}</select><select class="bg" aria-label="Background">${bgOpts}</select><input class="name" placeholder="Name (optional)" maxlength="20"></div>
+      <div class="desc"></div>`;
+    const modeSel = d.querySelector(".mode"), archSel = d.querySelector(".arch"), bgSel = d.querySelector(".bg"), nameIn = d.querySelector(".name");
+    modeSel.value = seat.mode === "preset" ? `preset:${seat.preset}` : seat.mode;
+    archSel.value = seat.arch || "random"; bgSel.value = T.backgrounds.some(b => b.key === seat.bg) ? seat.bg : "random"; nameIn.value = seat.name || "";
+    const describe = () => {
+      let txt;
+      if (seat.mode === "preset") { const p = T.presets[seat.preset], b = T.backgrounds.find(x => x.key === p.bg); txt = `${p.name} · ${ARCHETYPES[p.arch].label} · ${b.pub}`; }
+      else if (seat.mode === "build") {
+        const a = seat.arch !== "random" ? ARCHETYPES[seat.arch] : null, b = T.backgrounds.find(x => x.key === seat.bg);
+        txt = `${seat.name || "A random name"} · ${a ? a.label + ": " + a.style : "random personality"} · ${b ? b.pub : "random background"}`;
+      } else txt = "A random personality, background, name and look, picked when the session starts.";
+      d.querySelector(".desc").textContent = txt;
+    };
+    modeSel.onchange = () => {
+      const v = modeSel.value;
+      if (v.startsWith("preset:")) { seat.mode = "preset"; seat.preset = +v.slice(7); } else seat.mode = v;
+      d.querySelector(".build").classList.toggle("hidden", seat.mode !== "build");
+      saveSetup(); describe();
+    };
+    archSel.onchange = () => { seat.arch = archSel.value; saveSetup(); describe(); };
+    bgSel.onchange = () => { seat.bg = bgSel.value; saveSetup(); describe(); };
+    nameIn.oninput = () => { seat.name = nameIn.value; saveSetup(); describe(); };
+    describe();
+    box.appendChild(d);
+  });
+  document.getElementById("contentNote").innerHTML = `<b>Content note.</b> ${esc(T.note)} This is a training simulation with fictional people: it is not counselling and must not be used with real clients. You can pause at any time.`;
+}
+document.getElementById("countPick").onchange = e => { setup.count = +e.target.value; saveSetup(); renderSetup(); };
+document.getElementById("allRandomBtn").onclick = () => { setup.seats.forEach(s => s.mode = "random"); saveSetup(); renderSetup(); };
+document.getElementById("allPresetBtn").onclick = () => { setup.seats.forEach((s, i) => { s.mode = "preset"; s.preset = i; }); saveSetup(); renderSetup(); };
+
 function toggleBtn(id, key, after) {
   const b = document.getElementById(id);
   b.setAttribute("aria-pressed", S[key]);
@@ -1467,8 +1766,9 @@ document.getElementById("testBtn").onclick = async () => {
     } catch (err) { return `<b>${label}</b> (${esc(m)}): failed: ${esc(err.message)}`; }
   };
   const dirMsgs = [{ role:"system", content:directorSystemPrompt() }, { role:"user", content:`Turn 1. Current stage: forming.\nMember state:\n${memberSummary()}\n\nRecent conversation:\n(nothing said yet)\n\nFacilitator's latest move: Welcome back, everyone. How has this week been for you?` }];
+  if (!S.started) { applyGroup(readSetup()); resetState(); }
   const memMsgs = [{ role:"system", content:memberSystemPrompt(MEMBERS[0]) }, { role:"user", content:"Your current trust in the group: 5/10. Your mood: calm.\nRecent conversation:\nFacilitator: Welcome back, everyone. How has this week been for you?\n\nDirector's private note for your next turn (do not repeat it): respond naturally\nNow give your turn as JSON." }];
-  const [a, b] = await Promise.all([one("Members", ep, mm, memMsgs, 300, MEMBER_SCHEMA), one("Director", de, dm, dirMsgs, 450, DIRECTOR_SCHEMA)]);
+  const [a, b] = await Promise.all([one("Members", ep, mm, memMsgs, 300, memberSchema()), one("Director", de, dm, dirMsgs, 450, directorSchema())]);
   out.innerHTML = a + "<br>" + b;
 };
 document.querySelectorAll(".modal").forEach(mo => mo.addEventListener("click", e => { if (e.target === mo && mo.id === "settingsModal") mo.classList.add("hidden"); }));
@@ -1478,10 +1778,14 @@ document.getElementById("startBtn").onclick = () => {
   store("mode", S.mode);
   document.getElementById("startModal").classList.add("hidden");
   document.getElementById("modeBadge").textContent = S.mode === "llm" ? "Mode: AI agents" : "Mode: demo (scripted)";
+  applyGroup(readSetup());
+  resetState(); layout2D(); buildStage(); renderAll();
+  document.getElementById("groupBadge").textContent = `${GROUP.title} · session 3 of 8`;
   S.started = true;
+  window.dispatchEvent(new Event("group-ready"));
   setStatus(S.mode === "llm" ? "" : "ok", S.mode === "llm" ? "Waiting for first reply" : "Demo mode");
   tPanel.innerHTML = "";
-  addLine({ turn:0, who:"system", text:"The five members settle into the circle. It's your move: open the session." });
+  addLine({ turn:0, who:"system", text:`${THEME.title}: ${NUMBER_WORDS[MEMBERS.length]} ${THEME.who} settle into the circle (${MEMBERS.map(m => m.name).join(", ")}). It's your move: open the session.` });
   setBusy(false);
 };
 (function init() {
@@ -1489,7 +1793,7 @@ document.getElementById("startBtn").onclick = () => {
   document.title = "Group Circle Simulator " + APP_VERSION;
   const savedMode = store("mode");
   if (savedMode) { const r = document.querySelector(`input[name="mode"][value="${savedMode}"]`); if (r) r.checked = true; }
-  resetState(); buildStage(); renderAll();
+  renderSetup();
 })();
 </script>
 <script type="module">
@@ -1525,7 +1829,7 @@ import * as THREE from "./lib/three.module.min.js";
   scene.background = new THREE.Color(WALL);
   const camera = new THREE.PerspectiveCamera(40, 4 / 3, 0.1, 60);
   const CENTER = new THREE.Vector3(0, 0, -0.6);
-  const RADIUS = 1.75;
+  let RADIUS = 1.75;
 
   /* ---------- textures ---------- */
   function canvasTex(w, h, draw, { repeat, color = true } = {}) {
@@ -1676,13 +1980,6 @@ import * as THREE from "./lib/three.module.min.js";
   const HEAD_SCALE = 1.25;      // big toy-like heads
   const HEAD_Y = 0.34;          // head centre above the neck pivot
   const PIVOT_Y = 0.76;         // neck pivot above the floor
-  const LOOKS = {
-    ravi:    { skin: "#a8714e", hair: "#2a1c15", top: "#e8925a", brow: "#2a1c15" },
-    meiling: { skin: "#f3dac6", hair: "#1c1a1e", top: "#8fb7e0", brow: "#1c1a1e" },
-    daniel:  { skin: "#e6c09d", hair: "#17171a", top: "#465a8a", brow: "#17171a" },
-    aisyah:  { skin: "#dcac84", hijab: "#d98aa5", top: "#efe1d1", brow: "#3a2620" },
-    farah:   { skin: "#eecbb0", hair: "#3b2a21", top: "#86c4a5", brow: "#3b2a21" },
-  };
   // a point on the face surface (head-centre coordinates)
   const onFace = (x, y, off = 0) => new THREE.Vector3(x, y, Math.sqrt(Math.max(0, R * R - x * x - y * y)) + off);
   const faceOut = (mesh, p) => { mesh.position.copy(p); mesh.lookAt(p.clone().multiplyScalar(2)); };
@@ -1710,7 +2007,7 @@ import * as THREE from "./lib/three.module.min.js";
   const EYE_SQUINT = { warm: 0.62, amused: 0.5, hopeful: 0.8, bored: 0.55, withdrawn: 0.55, irritated: 0.75, defensive: 0.8 };
 
   function buildMember(m, angle) {
-    const L = LOOKS[m.id];
+    const L = { brow: m.look.hair || "#3a2620", ...m.look };
     const root = new THREE.Group();
     root.position.set(CENTER.x + Math.sin(angle) * RADIUS, 0, CENTER.z + Math.cos(angle) * RADIUS);
     root.userData.baseYaw = Math.atan2(CENTER.x - root.position.x, CENTER.z - root.position.z);
@@ -1757,52 +2054,67 @@ import * as THREE from "./lib/three.module.min.js";
     const mouthOpen = add(mouth, new THREE.SphereGeometry(1, 20, 14), mat("#5a2a2a", { roughness: 0.6 }), [0, -0.004, 0], { scale: [0.028, 0.02, 0.01], cast: false });
     mouthOpen.visible = false;
 
-    // hair and accessories
-    if (m.id === "meiling") {
-      const hm = hairMat(L.hair);
-      shell(hc, 0.345, 0, 2 * PI, 0, 0.36 * PI, hm);
-      shell(hc, 0.353, PI / 2 - 0.9, 1.8, 0.18 * PI, 0.2 * PI, hm);                     // bangs
-      shell(hc, 0.368, PI / 2 + 0.62, 2 * PI - 1.24, 0.12 * PI, 0.64 * PI, hm);         // bob
-      const gm = mat("#5b3b2b", { roughness: 0.4 });
-      [-1, 1].forEach(s => { const r = add(hc, new THREE.TorusGeometry(0.058, 0.0075, 10, 32), gm, [0, 0, 0], { cast: false }); faceOut(r, onFace(s * 0.105, 0.0, 0.03)); });
-      add(hc, new THREE.CylinderGeometry(0.006, 0.006, 0.06, 8), gm, onFace(0, 0.008, 0.035).toArray(), { rot: [0, 0, PI / 2], cast: false });
-    } else if (m.id === "ravi") {
-      const hm = hairMat(L.hair);
-      shell(hc, 0.343, 0, 2 * PI, 0, 0.33 * PI, hm);
-      shell(hc, 0.35, PI / 2 + 1.05, 2 * PI - 2.1, 0.2 * PI, 0.42 * PI, hm);
-      const up = new THREE.Vector3(0, 1, 0);
-      [[0.15, 1.2], [0.2, 1.75], [0.18, 2.35], [0.28, 1.5], [0.27, 2.1], [0.1, 0.4], [0.12, 3.0], [0.3, 0.9], [0.3, 2.6], [0.05, 1.9]].forEach(([th, ph]) => {
-        const t = th * PI, n = new THREE.Vector3(-Math.cos(ph) * Math.sin(t), Math.cos(t), Math.sin(ph) * Math.sin(t));
-        const c = add(hc, new THREE.ConeGeometry(0.06, 0.15, 10), hm, n.clone().multiplyScalar(0.36).toArray());
-        c.quaternion.setFromUnitVectors(up, n.clone().add(new THREE.Vector3(0, 0, 0.35)).normalize());
-      });
-      [-1, 1].forEach(s => { add(breath, new THREE.CylinderGeometry(0.008, 0.008, 0.16, 8), mat("#f7efe6"), [s * 0.06, 0.6, 0.27], { rot: [0.35, 0, 0] }); add(breath, new THREE.SphereGeometry(0.015, 10, 8), mat("#f7efe6"), [s * 0.06, 0.52, 0.3]); });   // hoodie strings
-      add(breath, new THREE.TorusGeometry(0.2, 0.07, 14, 36, PI), knitMat(shade(L.top, -0.06)), [0, 0.7, -0.08], { rot: [-0.25, 0, 0] });   // hood behind the neck
-    } else if (m.id === "daniel") {
-      const hm = hairMat(L.hair);
-      shell(hc, 0.342, 0, 2 * PI, 0, 0.35 * PI, hm);
-      shell(hc, 0.349, PI / 2 + 1.05, 2 * PI - 2.1, 0.2 * PI, 0.45 * PI, hm);
-      add(hc, new THREE.SphereGeometry(0.2, 32, 20), hm, [0.05, 0.27, 0.09], { scale: [1.1, 0.42, 0.95], rot: [0.25, 0, -0.25] });
-      const gm = mat("#1d1d22", { roughness: 0.35 });
-      [-1, 1].forEach(s => { const g = add(hc, new THREE.TorusGeometry(0.066, 0.008, 6, 4), gm, [0, 0, 0], { cast: false }); faceOut(g, onFace(s * 0.105, 0.0, 0.032)); g.rotateZ(PI / 4); });
-      add(hc, new THREE.CylinderGeometry(0.006, 0.006, 0.05, 8), gm, onFace(0, 0.01, 0.037).toArray(), { rot: [0, 0, PI / 2], cast: false });
-      [-1, 1].forEach(s => add(breath, new THREE.BoxGeometry(0.1, 0.012, 0.08), mat("#f7f5f0"), [s * 0.07, 0.7, 0.11], { rot: [0.5, 0, s * -0.45] }));
-    } else if (m.id === "aisyah") {
-      const hj = mat(L.hijab, { roughness: 0.95, side: THREE.DoubleSide, bumpMap: KNIT, bumpScale: 0.3 });
+    // hair, glasses and clothing details come from the member's generated look
+    const sty = L.style;
+    if (sty === "hijab") {
+      const hj = mat(L.hijab || "#d98aa5", { roughness: 0.95, side: THREE.DoubleSide, bumpMap: KNIT, bumpScale: 0.3 });
       shell(hc, 0.37, 0, 2 * PI, 0, 0.33 * PI, hj);
       shell(hc, 0.375, PI / 2 + 0.72, 2 * PI - 1.44, 0.22 * PI, 0.74 * PI, hj);
       add(breath, new THREE.CylinderGeometry(0.3, 0.48, 0.36, 48, 1, true), hj, [0, 0.8, 0], {});
       add(breath, new THREE.SphereGeometry(0.48, 40, 20, 0, 2 * PI, PI / 2, 0.25 * PI), hj, [0, 0.62, 0], { scale: [1, 0.5, 0.82] });
       add(hc, new THREE.SphereGeometry(0.018, 12, 8), mat("#e3c26f", { roughness: 0.3, metalness: 0.4 }), [0.27, -0.14, 0.2]);
-    } else if (m.id === "farah") {
+    } else {
       const hm = hairMat(L.hair);
-      shell(hc, 0.344, 0, 2 * PI, 0, 0.3 * PI, hm);
-      shell(hc, 0.352, PI / 2 + 0.75, 2 * PI - 1.5, 0.15 * PI, 0.52 * PI, hm);
-      shell(hc, 0.35, PI / 2 - 0.15, 1.0, 0.16 * PI, 0.18 * PI, hm);                   // side-swept fringe
-      add(hc, new THREE.SphereGeometry(0.13, 28, 20), hm, [0, 0.2, -0.29]);            // bun
-      add(hc, new THREE.TorusGeometry(0.08, 0.02, 10, 24), mat("#86c4a5"), [0, 0.15, -0.25], { rot: [0.9, 0, 0] });
-      const sc = knitMat("#6fa98c");
-      add(breath, new THREE.TorusGeometry(0.19, 0.07, 14, 36), sc, [0, 0.73, 0], { rot: [PI / 2, 0, 0] });
+      if (sty === "bob") {
+        shell(hc, 0.345, 0, 2 * PI, 0, 0.36 * PI, hm);
+        shell(hc, 0.353, PI / 2 - 0.9, 1.8, 0.18 * PI, 0.2 * PI, hm);                     // bangs
+        shell(hc, 0.368, PI / 2 + 0.62, 2 * PI - 1.24, 0.12 * PI, 0.64 * PI, hm);         // bob
+      } else if (sty === "long") {
+        shell(hc, 0.345, 0, 2 * PI, 0, 0.32 * PI, hm);
+        shell(hc, 0.35, PI / 2 - 0.2, 1.1, 0.16 * PI, 0.17 * PI, hm);                     // side fringe
+        shell(hc, 0.372, PI / 2 + 0.66, 2 * PI - 1.32, 0.12 * PI, 0.8 * PI, hm);          // long, past the jaw
+        add(breath, new THREE.SphereGeometry(0.3, 28, 18), hm, [0, 0.62, -0.17], { scale: [1, 0.9, 0.5] });   // hair down the back
+      } else if (sty === "tufts") {
+        shell(hc, 0.343, 0, 2 * PI, 0, 0.33 * PI, hm);
+        shell(hc, 0.35, PI / 2 + 1.05, 2 * PI - 2.1, 0.2 * PI, 0.42 * PI, hm);
+        const up = new THREE.Vector3(0, 1, 0);
+        [[0.15, 1.2], [0.2, 1.75], [0.18, 2.35], [0.28, 1.5], [0.27, 2.1], [0.1, 0.4], [0.12, 3.0], [0.3, 0.9], [0.3, 2.6], [0.05, 1.9]].forEach(([th, ph]) => {
+          const t = th * PI, n = new THREE.Vector3(-Math.cos(ph) * Math.sin(t), Math.cos(t), Math.sin(ph) * Math.sin(t));
+          const c = add(hc, new THREE.ConeGeometry(0.06, 0.15, 10), hm, n.clone().multiplyScalar(0.36).toArray());
+          c.quaternion.setFromUnitVectors(up, n.clone().add(new THREE.Vector3(0, 0, 0.35)).normalize());
+        });
+      } else if (sty === "sidepart") {
+        shell(hc, 0.342, 0, 2 * PI, 0, 0.35 * PI, hm);
+        shell(hc, 0.349, PI / 2 + 1.05, 2 * PI - 2.1, 0.2 * PI, 0.45 * PI, hm);
+        add(hc, new THREE.SphereGeometry(0.2, 32, 20), hm, [0.05, 0.27, 0.09], { scale: [1.1, 0.42, 0.95], rot: [0.25, 0, -0.25] });
+      } else if (sty === "bun") {
+        shell(hc, 0.344, 0, 2 * PI, 0, 0.3 * PI, hm);
+        shell(hc, 0.352, PI / 2 + 0.75, 2 * PI - 1.5, 0.15 * PI, 0.52 * PI, hm);
+        shell(hc, 0.35, PI / 2 - 0.15, 1.0, 0.16 * PI, 0.18 * PI, hm);                   // side-swept fringe
+        add(hc, new THREE.SphereGeometry(0.13, 28, 20), hm, [0, 0.2, -0.29]);            // bun
+        add(hc, new THREE.TorusGeometry(0.08, 0.02, 10, 24), mat(L.top), [0, 0.15, -0.25], { rot: [0.9, 0, 0] });
+      } else {                                                                            // short
+        shell(hc, 0.344, 0, 2 * PI, 0, 0.34 * PI, hm);
+        shell(hc, 0.348, PI / 2 + 1.1, 2 * PI - 2.2, 0.2 * PI, 0.42 * PI, hm);
+        add(hc, new THREE.SphereGeometry(0.16, 28, 18), hm, [-0.04, 0.29, 0.1], { scale: [1.3, 0.35, 0.9], rot: [0.3, 0, 0.15] });
+      }
+    }
+    if (L.glasses === "round") {
+      const gm = mat("#5b3b2b", { roughness: 0.4 });
+      [-1, 1].forEach(s => { const r = add(hc, new THREE.TorusGeometry(0.058, 0.0075, 10, 32), gm, [0, 0, 0], { cast: false }); faceOut(r, onFace(s * 0.105, 0.0, 0.03)); });
+      add(hc, new THREE.CylinderGeometry(0.006, 0.006, 0.06, 8), gm, onFace(0, 0.008, 0.035).toArray(), { rot: [0, 0, PI / 2], cast: false });
+    } else if (L.glasses === "square") {
+      const gm = mat("#1d1d22", { roughness: 0.35 });
+      [-1, 1].forEach(s => { const g = add(hc, new THREE.TorusGeometry(0.066, 0.008, 6, 4), gm, [0, 0, 0], { cast: false }); faceOut(g, onFace(s * 0.105, 0.0, 0.032)); g.rotateZ(PI / 4); });
+      add(hc, new THREE.CylinderGeometry(0.006, 0.006, 0.05, 8), gm, onFace(0, 0.01, 0.037).toArray(), { rot: [0, 0, PI / 2], cast: false });
+    }
+    if (L.extra === "hood") {
+      [-1, 1].forEach(s => { add(breath, new THREE.CylinderGeometry(0.008, 0.008, 0.16, 8), mat("#f7efe6"), [s * 0.06, 0.6, 0.27], { rot: [0.35, 0, 0] }); add(breath, new THREE.SphereGeometry(0.015, 10, 8), mat("#f7efe6"), [s * 0.06, 0.52, 0.3]); });
+      add(breath, new THREE.TorusGeometry(0.2, 0.07, 14, 36, PI), knitMat(shade(L.top, -0.06)), [0, 0.7, -0.08], { rot: [-0.25, 0, 0] });
+    } else if (L.extra === "collar" && sty !== "hijab") {
+      [-1, 1].forEach(s => add(breath, new THREE.BoxGeometry(0.1, 0.012, 0.08), mat("#f7f5f0"), [s * 0.07, 0.7, 0.11], { rot: [0.5, 0, s * -0.45] }));
+    } else if (L.extra === "scarf" && sty !== "hijab") {
+      add(breath, new THREE.TorusGeometry(0.19, 0.07, 14, 36), knitMat(shade(L.top, -0.14)), [0, 0.73, 0], { rot: [PI / 2, 0, 0] });
     }
 
     // trust ring and markers on the floor
@@ -1815,9 +2127,20 @@ import * as THREE from "./lib/three.module.min.js";
       emotion: null, trust: null, yaw: 0, bodyYaw: 0, pitch: 0, glanceUntil: 0, glanceAt: null, nextGlance: 2 + Math.random() * 4, nextBlink: 1 + Math.random() * 3, blinkT: 0 };
   }
 
-  // seat order matches the 2D circle: Ravi front-left, Mei Ling back-left, Daniel back, Aisyah back-right, Farah front-right
-  const ANGLES = { ravi: -1.25, meiling: -2.35, daniel: PI, aisyah: 2.35, farah: 1.25 };
-  const H = Object.fromEntries(MEMBERS.map(m => [m.id, buildMember(m, ANGLES[m.id])]));
+  // Seats go round the back of the circle from front-left to front-right,
+  // matching the 2D layout; the front is left open for the facilitator.
+  let H = {};
+  function buildAll() {
+    Object.values(H).forEach(h => scene.remove(h.root));
+    Object.values(ribbons).forEach(r => scene.remove(r));
+    for (const k in ribbons) delete ribbons[k];
+    const n = MEMBERS.length;
+    RADIUS = 1.35 + 0.08 * n;
+    const step = n > 1 ? (2 * PI - 2.4) / (n - 1) : 0;
+    H = Object.fromEntries(MEMBERS.map((m, i) => [m.id, buildMember(m, n > 1 ? -1.2 - i * step : PI)]));
+    Stage3D.heads = H;
+  }
+  window.addEventListener("group-ready", buildAll);
 
   /* ---------- relationship ribbons on the rug ---------- */
   const ribbons = {};
@@ -1894,10 +2217,16 @@ import * as THREE from "./lib/three.module.min.js";
 
   let last = performance.now();
   function frame(now) {
+    // keep the loop alive even if one frame throws
+    requestAnimationFrame(frame);
+    try { drawFrame(now); } catch (e) { console.error("3D frame error:", e); }
+  }
+  function drawFrame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     const t = now / 1000;
     for (const h of Object.values(H)) {
       const id = h.m.id, st = S.members[id], el = document.getElementById("m-" + id);
+      if (!st || !el) continue;
       const speaking = el.classList.contains("speaking");
       // expression
       if (h.emotion !== st.emotion) {
@@ -1966,16 +2295,17 @@ import * as THREE from "./lib/three.module.min.js";
     }
     // relationship ribbons
     for (const [k, v] of Object.entries(S.rel)) {
+      const [ra, rb2] = k.split("|"); if (!H[ra] || !H[rb2]) continue;
       const rb = ribbon(k);
       rb.visible = S.lines && v !== 0;
       if (rb.visible) { rb.material.color.set(v > 0 ? "#3f9a6b" : "#c9503f"); rb.material.opacity = 0.25 + Math.abs(v) * 0.17; rb.scale.y = 0.03 + Math.abs(v) * 0.025; }
     }
     renderer.render(scene, camera);
-    requestAnimationFrame(frame);
   }
   const m_color = id => BYID[id].color;
   requestAnimationFrame(frame);
   window.Stage3D = { scene, camera, heads: H };
+  if (S.started) buildAll();
 })();
 </script>
 
